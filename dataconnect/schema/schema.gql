@@ -1,0 +1,11 @@
+type Product @table(name: "product", key: ["id"]) {
+  id: UUID! @default(expr: "uuidV4()")
+  name: String!
+  description: String
+  # Fixed selling price in Canadian cents.
+  priceCents: Int!
+  isActive: Boolean! @default(value: true)
+  # Whether this product is lechon.
+  isLechon: Boolean! @default(value: false)
+  createdAt: Timestamp! @default(expr: "request.time")
+}

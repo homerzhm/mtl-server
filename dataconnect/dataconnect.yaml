@@ -1,0 +1,12 @@
+specVersion: "v1"
+serviceId: restaurant
+location: northamerica-northeast1
+schema:
+  source: ./schema
+  datasource:
+    postgresql:
+      database: restaurant
+      cloudSql:
+        instanceId: mtl-restaurant-dev
+      schemaValidation: COMPATIBLE
+connectorDirs: []
