@@ -1,0 +1,7 @@
+query ListProducts($offset: Int! = 0) @auth(level: USER) {
+  products(limit: 100, offset: $offset, orderBy: [{createdAt: ASC}, {id: ASC}]) { id name chineseName priceCents isLechon isActive revision createdAt }
+}
+
+query GetProduct($id: UUID!) @auth(level: USER) {
+  product(id: $id) { id name chineseName priceCents isLechon isActive revision createdAt }
+}

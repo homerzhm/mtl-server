@@ -1,0 +1,4 @@
+# Trusted administrative operation; never deployed in the client connector.
+mutation BackfillProductRevision @auth(level: NO_ACCESS) {
+  product_updateMany(where: {revision: {isNull: true}}, data: {revision: 0})
+}

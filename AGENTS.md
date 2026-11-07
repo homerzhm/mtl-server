@@ -31,3 +31,17 @@ This directory maintains and deploys Firebase services for the restaurant app. T
   ```
 
 - Pass an explicit `--project` for cloud commands. The `dev` alias points to `mtl-service-e3e0c`. Production setup and deployments require an explicit request.
+
+## Staff admin connector
+
+- Client operations live under `dataconnect/staff-admin/`. List and get require
+  a signed-in user. Create and update require Google sign-in and Boolean
+  `staff:true` and `admin:true` claims.
+- Product prices are nonnegative signed 32-bit CAD cents. Keep optional Chinese
+  names; preserve descriptions and creation timestamps during editor updates.
+- Updates must atomically match and increment `revision`; do not use upsert for
+  existing-product edits. The dependent post-write lookups are intentional.
+- Run `firebase emulators:exec --only dataconnect --project demo-mtl "node --test tests/products.test.mjs"`
+  with current Firebase CLI and a native Node runtime. The tests never target cloud.
+- Follow the staged revision migration and Swift SDK generation steps in README.md.
+  Generated SDK files under `dataconnect/generated/` are ignored; iOS tracks its copy.

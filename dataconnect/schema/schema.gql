@@ -2,6 +2,8 @@ type Product @table(name: "product", key: ["id"]) {
   id: UUID! @default(expr: "uuidV4()")
   name: String!
   description: String
+  chineseName: String
+  revision: Int! @default(value: 0)
   # Fixed selling price in Canadian cents.
   priceCents: Int!
   isActive: Boolean! @default(value: true)

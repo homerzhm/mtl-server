@@ -1,3 +1,7 @@
 .firebase/
 *-debug.log
 .dataconnect/
+
+dataconnect/generated/
+
+dataconnect/.dataconnect/

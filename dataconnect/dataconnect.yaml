@@ -9,4 +9,4 @@ schema:
       cloudSql:
         instanceId: mtl-restaurant-dev
       schemaValidation: COMPATIBLE
-connectorDirs: []
+connectorDirs: ["./staff-admin"]
