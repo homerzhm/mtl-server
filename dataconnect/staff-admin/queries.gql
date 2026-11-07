@@ -5,3 +5,21 @@ query ListProducts($offset: Int! = 0) @auth(level: USER) {
 query GetProduct($id: UUID!) @auth(level: USER) {
   product(id: $id) { id name chineseName priceCents isLechon isActive revision createdAt }
 }
+
+query ListClients($offset: Int! = 0) @auth(expr: "auth.uid != '' && auth.token.firebase.sign_in_provider == 'google.com' && ((has(auth.token.staff) && auth.token.staff == true) || (has(auth.token.admin) && auth.token.admin == true))") {
+  clients(limit: 100, offset: $offset, orderBy: [{createdAt: ASC}, {id: ASC}]) {
+    id phoneNumber name email revision createdAt
+  }
+}
+
+query GetClient($id: UUID!) @auth(expr: "auth.uid != '' && auth.token.firebase.sign_in_provider == 'google.com' && ((has(auth.token.staff) && auth.token.staff == true) || (has(auth.token.admin) && auth.token.admin == true))") {
+  client(id: $id) {
+    id phoneNumber name email revision createdAt
+  }
+}
+
+query GetClientByPhoneNumber($phoneNumber: String!) @auth(expr: "auth.uid != '' && auth.token.firebase.sign_in_provider == 'google.com' && ((has(auth.token.staff) && auth.token.staff == true) || (has(auth.token.admin) && auth.token.admin == true))") {
+  clients(where: {phoneNumber: {eq_expr: "vars.phoneNumber.matches('^[0-9]{10}$') ? '+1' + vars.phoneNumber : vars.phoneNumber"}}, limit: 1) {
+    id phoneNumber name email revision createdAt
+  }
+}

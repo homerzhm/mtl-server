@@ -41,7 +41,17 @@ This directory maintains and deploys Firebase services for the restaurant app. T
   names; preserve descriptions and creation timestamps during editor updates.
 - Updates must atomically match and increment `revision`; do not use upsert for
   existing-product edits. The dependent post-write lookups are intentional.
-- Run `firebase emulators:exec --only dataconnect --project demo-mtl "node --test tests/products.test.mjs"`
+- Run `firebase emulators:exec --only dataconnect --project demo-mtl "node --test tests/products.test.mjs tests/clients.test.mjs"`
   with current Firebase CLI and a native Node runtime. The tests never target cloud.
 - Follow the staged revision migration and Swift SDK generation steps in README.md.
   Generated SDK files under `dataconnect/generated/` are ignored; iOS tracks its copy.
+
+## Client contacts
+
+- Keep a stable UUID identity and database-unique `phoneNumber`; name and email
+  are nullable. Normalize 10-digit Canadian/default NANP input to `+1` plus the
+  digits in add, edit, and phone lookup. Store international form only.
+- Client operations require Google sign-in and Boolean `staff:true` OR
+  `admin:true`. Keep these permissions separate from product permissions.
+- Client edits atomically match and increment `revision`, preserve `createdAt`,
+  and never upsert. Optional fields are a full form replacement; null clears.

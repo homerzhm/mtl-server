@@ -11,3 +11,13 @@ type Product @table(name: "product", key: ["id"]) {
   isLechon: Boolean! @default(value: false)
   createdAt: Timestamp! @default(expr: "request.time")
 }
+
+# Contact phone numbers use canonical international format (+country code and digits).
+type Client @table(name: "client", key: ["id"]) {
+  id: UUID! @default(expr: "uuidV4()")
+  phoneNumber: String! @unique
+  name: String
+  email: String
+  revision: Int! @default(value: 0)
+  createdAt: Timestamp! @default(expr: "request.time")
+}

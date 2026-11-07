@@ -17,3 +17,19 @@ mutation UpdateProduct($id: UUID!, $name: String!, $chineseName: String, $priceC
       priceCents @check(expr: "this >= 0", message: "PRODUCT_VALIDATION")
       isLechon isActive revision createdAt } }
 }
+
+mutation CreateClient($id: UUID!, $phoneNumber: String!, $name: String, $email: String) @auth(expr: "auth.uid != '' && auth.token.firebase.sign_in_provider == 'google.com' && ((has(auth.token.staff) && auth.token.staff == true) || (has(auth.token.admin) && auth.token.admin == true))") @transaction {
+  client_insert(data: {id: $id, phoneNumber_expr: "vars.phoneNumber.matches('^[0-9]{10}$') ? '+1' + vars.phoneNumber : vars.phoneNumber", name: $name, email: $email})
+  query { client(key: {id_expr: "response.client_insert.id"}) { id
+      phoneNumber @check(expr: "this.matches(r'^\\+[1-9][0-9]{1,14}$')", message: "CLIENT_VALIDATION")
+      name email revision createdAt } }
+}
+
+mutation UpdateClient($id: UUID!, $phoneNumber: String!, $name: String, $email: String, $expectedRevision: Int!) @auth(expr: "auth.uid != '' && auth.token.firebase.sign_in_provider == 'google.com' && ((has(auth.token.staff) && auth.token.staff == true) || (has(auth.token.admin) && auth.token.admin == true))") @transaction {
+  client_updateMany(where: {id: {eq: $id}, revision: {eq: $expectedRevision}},
+    data: {phoneNumber_expr: "vars.phoneNumber.matches('^[0-9]{10}$') ? '+1' + vars.phoneNumber : vars.phoneNumber", name: $name, email: $email, revision_expr: "vars.expectedRevision + 1"})
+    @check(expr: "this == 1", message: "CLIENT_CONFLICT")
+  query { client(key: {id_expr: "response.client_updateMany == 1 ? vars.id : vars.id"}) { id
+      phoneNumber @check(expr: "this.matches(r'^\\+[1-9][0-9]{1,14}$')", message: "CLIENT_VALIDATION")
+      name email revision createdAt } }
+}

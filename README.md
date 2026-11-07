@@ -20,19 +20,59 @@ revision before incrementing it. An unmatched revision produces PRODUCT_CONFLICT
 Validation failures produce PRODUCT_VALIDATION and roll back the transaction.
 The dependent response lookup is intentional: it runs after the database write.
 
+## Client contacts
+
+The `Client` table has a permanent UUID, required unique `phoneNumber`, optional
+`name` and `email`, and server-owned `revision` and `createdAt`. Phone corrections
+preserve identity and creation time. Email addresses are not unique.
+
+All client operations require Google sign-in and a Boolean `staff:true` **or**
+`admin:true` claim. Product permissions are unchanged.
+
+- `GetClient(id)` returns a client or null.
+- `GetClientByPhoneNumber(phoneNumber)` returns a `clients` array with zero or one
+  result, because SQL Connect singular lookups use the primary UUID key.
+- `ListClients(offset = 0)` returns 100 rows per page in creation-time, UUID order.
+  Continue with offsets 100, 200, etc. until a page has fewer than 100 rows.
+- `CreateClient(id, phoneNumber, name?, email?)` inserts a client. Generate a UUID
+  in the caller. Duplicate IDs or phone numbers fail; existing contacts are never
+  overwritten. Omitted optional fields are null.
+- `UpdateClient(id, phoneNumber, name?, email?, expectedRevision)` saves a complete
+  contact form. Pass both optional fields; null (or omission) clears them. The
+  expected revision must match; a missing or stale row produces `CLIENT_CONFLICT`.
+  Successful edits increment the revision atomically. Read the nested post-write
+  `query.client` response for the saved row.
+
+Canada is the default: exactly 10 digits such as `4165551234` are normalized on
+add, edit, and phone lookup to `+14165551234`. International input must already
+contain `+` followed by 2–15 digits, starting with a nonzero country code.
+Spaces, punctuation, extensions, and other local formats are rejected on writes
+with `CLIENT_VALIDATION`; callers should submit digits or canonical international
+format. Validation checks format, not whether a number is assigned or reachable.
+The database unique constraint enforces uniqueness even for concurrent requests.
+Failed validation and duplicate edits roll back the entire transaction.
+
+The new table is additive and requires no existing-row backfill. Before a
+requested dev release, review
+`firebase dataconnect:sql:diff --project dev`, apply the reviewed additive SQL
+migration, and deploy both schema and connector. Generate the Swift SDK as below
+when integrating the operations into iOS.
+
 ## Local verification
 
 Use an ARM-compatible Node installation and current Firebase CLI (tested with
 firebase-tools 15.35.0 / SQL Connect emulator 3.4.25). Then run:
 
 ```sh
-firebase emulators:exec --only dataconnect --project demo-mtl "node --test tests/products.test.mjs"
+firebase emulators:exec --only dataconnect --project demo-mtl "node --test tests/products.test.mjs tests/clients.test.mjs"
 ```
 
 Tests use unsigned Firebase tokens accepted only by the local emulator and never
 send requests to the cloud. They cover authorization for every operation, exact
 cents, optional fields, soft hiding, duplicate names, zero price, validation
 rollback, concurrent updates, missing rows, and description preservation.
+Client tests cover staff/admin access, optional fields, normalized uniqueness,
+phone corrections, transaction rollback, revision conflicts, and pagination.
 
 ## Swift SDK generation
 
@@ -76,3 +116,11 @@ Added nullable columns, deployed the intermediate schema, ran the null-only
 revision backfill (0 rows required changes), then enforced revision NOT NULL and
 default 0. Deployed the final schema and `staff-admin` connector to dev. No demo
 products were inserted into the cloud database.
+
+### Client contacts dev deployment verified 2026-11-07
+
+Reviewed and applied the additive migration creating `client` and its unique
+phone-number index. Deployed the schema and `staff-admin` connector to dev
+(`mtl-service-e3e0c`); Firebase confirmed database compatibility and successful
+connector deployment. All 26 local client and product emulator tests passed.
+No client records were inserted into the cloud database during verification.
