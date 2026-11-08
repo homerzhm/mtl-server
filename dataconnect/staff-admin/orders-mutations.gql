@@ -122,7 +122,7 @@ mutation UpdateOrderContact($id: UUID!, $expectedRevision: Int!, $contactPhoneNu
 mutation UpdateOrderPricing($id: UUID!, $expectedRevision: Int!, $discountCents: Int!, $depositRequiredCents: Int!, $finalTotalCents: Int = null) @auth(expr: "auth.uid != '' && auth.token.firebase.sign_in_provider == 'google.com' && ((has(auth.token.staff) && auth.token.staff == true) || (has(auth.token.admin) && auth.token.admin == true))") @transaction {
   before: query @redact {
     order(id: $id) @check(expr: "this != null && this.revision == vars.expectedRevision", message: "ORDER_CONFLICT")
-      @check(expr: "this.status == 'CONFIRMED' || (has(auth.token.admin) && auth.token.admin == true)", message: "ORDER_FORBIDDEN") { ...OrderFields }
+      @check(expr: "this.status in ['CONFIRMED', 'PAID'] || (has(auth.token.admin) && auth.token.admin == true)", message: "ORDER_FORBIDDEN") { ...OrderFields }
 
   }
   writeOrder: order_updateMany(where: {id: {eq_expr: "response.before.order.id"}, revision: {eq: $expectedRevision}}, data: {revision_expr: "vars.expectedRevision + 1", updatedAt_expr: "request.time", discountCents: $discountCents, depositRequiredCents: $depositRequiredCents, finalTotalCents: $finalTotalCents})
@@ -156,7 +156,7 @@ mutation UpdateOrderPricing($id: UUID!, $expectedRevision: Int!, $discountCents:
 mutation UpdateOrderSchedule($id: UUID!, $expectedRevision: Int!, $scheduledFor: Timestamp = null) @auth(expr: "auth.uid != '' && auth.token.firebase.sign_in_provider == 'google.com' && ((has(auth.token.staff) && auth.token.staff == true) || (has(auth.token.admin) && auth.token.admin == true))") @transaction {
   before: query @redact {
     order(id: $id) @check(expr: "this != null && this.revision == vars.expectedRevision", message: "ORDER_CONFLICT")
-      @check(expr: "this.status == 'CONFIRMED' || (has(auth.token.admin) && auth.token.admin == true)", message: "ORDER_FORBIDDEN") { ...OrderFields }
+      @check(expr: "this.status in ['CONFIRMED', 'PAID'] || (has(auth.token.admin) && auth.token.admin == true)", message: "ORDER_FORBIDDEN") { ...OrderFields }
 
   }
   writeOrder: order_updateMany(where: {id: {eq_expr: "response.before.order.id"}, revision: {eq: $expectedRevision}}, data: {revision_expr: "vars.expectedRevision + 1", updatedAt_expr: "request.time", scheduledFor: $scheduledFor})
@@ -186,7 +186,7 @@ mutation UpdateOrderSchedule($id: UUID!, $expectedRevision: Int!, $scheduledFor:
 mutation AddOrderItem($id: UUID!, $expectedRevision: Int!, $itemId: UUID!, $productId: UUID!, $quantity: Int!, $unitPriceCents: Int = null, $notes: String = null) @auth(expr: "auth.uid != '' && auth.token.firebase.sign_in_provider == 'google.com' && ((has(auth.token.staff) && auth.token.staff == true) || (has(auth.token.admin) && auth.token.admin == true))") @transaction {
   before: query @redact {
     order(id: $id) @check(expr: "this != null && this.revision == vars.expectedRevision", message: "ORDER_CONFLICT")
-      @check(expr: "this.status == 'CONFIRMED' || (has(auth.token.admin) && auth.token.admin == true)", message: "ORDER_FORBIDDEN") { ...OrderFields }
+      @check(expr: "this.status in ['CONFIRMED', 'PAID'] || (has(auth.token.admin) && auth.token.admin == true)", message: "ORDER_FORBIDDEN") { ...OrderFields }
     product(id: $productId) @check(expr: "this != null && this.isActive && vars.quantity > 0 && (vars.unitPriceCents == null || vars.unitPriceCents >= 0)", message: "ORDER_VALIDATION") {id name priceCents isActive}
   }
   writeOrder: order_updateMany(where: {id: {eq_expr: "response.before.order.id"}, revision: {eq: $expectedRevision}}, data: {revision_expr: "vars.expectedRevision + 1", updatedAt_expr: "request.time", itemCount_expr: "response.before.order.itemCount + 1", subtotalCents_expr: "response.before.order.subtotalCents + vars.quantity * (vars.unitPriceCents == null ? response.before.product.priceCents : vars.unitPriceCents)"})
@@ -230,7 +230,7 @@ mutation AddOrderItem($id: UUID!, $expectedRevision: Int!, $itemId: UUID!, $prod
 mutation UpdateOrderItem($id: UUID!, $expectedRevision: Int!, $itemId: UUID!, $quantity: Int!, $unitPriceCents: Int!, $notes: String = null) @auth(expr: "auth.uid != '' && auth.token.firebase.sign_in_provider == 'google.com' && ((has(auth.token.staff) && auth.token.staff == true) || (has(auth.token.admin) && auth.token.admin == true))") @transaction {
   before: query @redact {
     order(id: $id) @check(expr: "this != null && this.revision == vars.expectedRevision", message: "ORDER_CONFLICT")
-      @check(expr: "this.status == 'CONFIRMED' || (has(auth.token.admin) && auth.token.admin == true)", message: "ORDER_FORBIDDEN") { ...OrderFields }
+      @check(expr: "this.status in ['CONFIRMED', 'PAID'] || (has(auth.token.admin) && auth.token.admin == true)", message: "ORDER_FORBIDDEN") { ...OrderFields }
     item: orderItem(id: $itemId) @check(expr: "this != null && this.orderId == vars.id && vars.quantity > 0 && vars.unitPriceCents >= 0", message: "ORDER_VALIDATION") { ...OrderItemFields }
   }
   writeOrder: order_updateMany(where: {id: {eq_expr: "response.before.order.id"}, revision: {eq: $expectedRevision}}, data: {revision_expr: "vars.expectedRevision + 1", updatedAt_expr: "request.time", subtotalCents_expr: "response.before.order.subtotalCents - response.before.item.quantity * response.before.item.unitPriceCents + vars.quantity * vars.unitPriceCents"})
@@ -282,7 +282,7 @@ mutation UpdateOrderItem($id: UUID!, $expectedRevision: Int!, $itemId: UUID!, $q
 mutation RemoveOrderItem($id: UUID!, $expectedRevision: Int!, $itemId: UUID!) @auth(expr: "auth.uid != '' && auth.token.firebase.sign_in_provider == 'google.com' && ((has(auth.token.staff) && auth.token.staff == true) || (has(auth.token.admin) && auth.token.admin == true))") @transaction {
   before: query @redact {
     order(id: $id) @check(expr: "this != null && this.revision == vars.expectedRevision", message: "ORDER_CONFLICT")
-      @check(expr: "this.status == 'CONFIRMED' || (has(auth.token.admin) && auth.token.admin == true)", message: "ORDER_FORBIDDEN") { ...OrderFields }
+      @check(expr: "this.status in ['CONFIRMED', 'PAID'] || (has(auth.token.admin) && auth.token.admin == true)", message: "ORDER_FORBIDDEN") { ...OrderFields }
     item: orderItem(id: $itemId) @check(expr: "this != null && this.orderId == vars.id", message: "ORDER_VALIDATION") { ...OrderItemFields }
   }
   writeOrder: order_updateMany(where: {id: {eq_expr: "response.before.order.id"}, revision: {eq: $expectedRevision}}, data: {revision_expr: "vars.expectedRevision + 1", updatedAt_expr: "request.time", itemCount_expr: "response.before.order.itemCount - 1", subtotalCents_expr: "response.before.order.subtotalCents - response.before.item.quantity * response.before.item.unitPriceCents"})
@@ -323,10 +323,40 @@ mutation RemoveOrderItem($id: UUID!, $expectedRevision: Int!, $itemId: UUID!) @a
   result: query { order(key: {id_expr: "response.orderAuditEvent_insert.id != '' ? vars.id : vars.id"}) { ...OrderFields }  }
 }
 
-mutation CompleteOrder($id: UUID!, $expectedRevision: Int!) @auth(expr: "auth.uid != '' && auth.token.firebase.sign_in_provider == 'google.com' && ((has(auth.token.staff) && auth.token.staff == true) || (has(auth.token.admin) && auth.token.admin == true))") @transaction {
+mutation MarkOrderPaid($id: UUID!, $expectedRevision: Int!) @auth(expr: "auth.uid != '' && auth.token.firebase.sign_in_provider == 'google.com' && ((has(auth.token.staff) && auth.token.staff == true) || (has(auth.token.admin) && auth.token.admin == true))") @transaction {
   before: query @redact {
     order(id: $id) @check(expr: "this != null && this.revision == vars.expectedRevision", message: "ORDER_CONFLICT")
       @check(expr: "this.status == 'CONFIRMED'", message: "ORDER_FORBIDDEN") { ...OrderFields }
+
+  }
+  writeOrder: order_updateMany(where: {id: {eq_expr: "response.before.order.id"}, revision: {eq: $expectedRevision}}, data: {revision_expr: "vars.expectedRevision + 1", updatedAt_expr: "request.time", status: "PAID"})
+    @check(expr: "this == 1", message: "ORDER_CONFLICT")
+
+  after: query @redact {
+    order(key: {id_expr: "response.writeOrder == 1 ? vars.id : vars.id"}) @check(expr: "this != null && this.subtotalCents >= 0 && this.itemCount > 0 && this.discountCents >= 0 && this.discountCents <= this.subtotalCents && this.depositRequiredCents >= 0 && (this.finalTotalCents == null || this.finalTotalCents >= 0) && (this.cancellationTotalCents == null || this.cancellationTotalCents >= 0) && (this.contactPhoneNumber == null || this.contactPhoneNumber.matches(r'^\\+[1-9][0-9]{1,14}$'))", message: "ORDER_VALIDATION") { ...OrderFields }
+
+  }
+  orderAuditEvent_insert(data: { orderId: $id, action: "ORDER_MARKED_PAID", actorUid_expr: "auth.uid", orderRevision_expr: "response.after.order.revision", changes_expr: """
+{
+  'before': {
+    'order': {
+      'status': response.before.order.status
+    }
+  },
+  'after': {
+    'order': {
+      'status': response.after.order.status
+    }
+  }
+}
+""" })
+  result: query { order(key: {id_expr: "response.orderAuditEvent_insert.id != '' ? vars.id : vars.id"}) { ...OrderFields }  }
+}
+
+mutation CompleteOrder($id: UUID!, $expectedRevision: Int!) @auth(expr: "auth.uid != '' && auth.token.firebase.sign_in_provider == 'google.com' && ((has(auth.token.staff) && auth.token.staff == true) || (has(auth.token.admin) && auth.token.admin == true))") @transaction {
+  before: query @redact {
+    order(id: $id) @check(expr: "this != null && this.revision == vars.expectedRevision", message: "ORDER_CONFLICT")
+      @check(expr: "this.status in ['CONFIRMED', 'PAID']", message: "ORDER_FORBIDDEN") { ...OrderFields }
 
   }
   writeOrder: order_updateMany(where: {id: {eq_expr: "response.before.order.id"}, revision: {eq: $expectedRevision}}, data: {revision_expr: "vars.expectedRevision + 1", updatedAt_expr: "request.time", status: "COMPLETED", completedAt_expr: "request.time"})
@@ -358,7 +388,7 @@ mutation CompleteOrder($id: UUID!, $expectedRevision: Int!) @auth(expr: "auth.ui
 mutation CancelOrder($id: UUID!, $expectedRevision: Int!, $cancellationTotalCents: Int!) @auth(expr: "auth.uid != '' && auth.token.firebase.sign_in_provider == 'google.com' && ((has(auth.token.staff) && auth.token.staff == true) || (has(auth.token.admin) && auth.token.admin == true))") @transaction {
   before: query @redact {
     order(id: $id) @check(expr: "this != null && this.revision == vars.expectedRevision", message: "ORDER_CONFLICT")
-      @check(expr: "this.status == 'CONFIRMED' || (this.status == 'COMPLETED' && (has(auth.token.admin) && auth.token.admin == true))", message: "ORDER_FORBIDDEN") { ...OrderFields }
+      @check(expr: "this.status in ['CONFIRMED', 'PAID'] || (this.status == 'COMPLETED' && (has(auth.token.admin) && auth.token.admin == true))", message: "ORDER_FORBIDDEN") { ...OrderFields }
 
   }
   writeOrder: order_updateMany(where: {id: {eq_expr: "response.before.order.id"}, revision: {eq: $expectedRevision}}, data: {revision_expr: "vars.expectedRevision + 1", updatedAt_expr: "request.time", status: "CANCELLED", cancelledAt_expr: "request.time", cancellationTotalCents: $cancellationTotalCents})

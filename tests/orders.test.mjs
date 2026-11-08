@@ -282,7 +282,7 @@ test('every order operation rejects missing, incorrect-provider and non-Boolean 
     UpdateOrderPricing:{...base,discountCents:0,depositRequiredCents:0,finalTotalCents:1000},
     AddOrderItem:{...base,itemId:uuid(),productId:value.productId,quantity:1},
     UpdateOrderItem:{...base,itemId:value.itemId,quantity:1,unitPriceCents:1000},
-    RemoveOrderItem:{...base,itemId:value.itemId},CompleteOrder:base,
+    RemoveOrderItem:{...base,itemId:value.itemId},MarkOrderPaid:base,CompleteOrder:base,
     CancelOrder:{...base,cancellationTotalCents:0},ReopenOrder:base,
     UpdateCancellationSettlement:{...base,cancellationTotalCents:0},
     RecordCashPayment:{...base,paymentId:uuid(),amountCents:100},
@@ -327,4 +327,59 @@ test('completion racing a staff price change cannot allow a post-completion pric
   if((await get(value.id)).order.status==='CONFIRMED') await ok('CompleteOrder',{id:value.id,expectedRevision:1});
   const current=(await get(value.id)).order;
   await denied('UpdateOrderPricing',{id:value.id,expectedRevision:current.revision,discountCents:0,depositRequiredCents:0,finalTotalCents:1});
+});
+
+test('staff and admins manually mark paid without creating receipts or checking the balance',async()=>{
+  for(const claims of [staff,admin]) {
+    const value=await create();
+    const before=await get(value.id);
+    const result=await ok('MarkOrderPaid',{id:value.id,expectedRevision:0},claims);
+    assert.equal(result.result.order.status,'PAID');
+    assert.equal(result.result.order.revision,1);
+    assert.equal(result.result.order.completedAt,null);
+    const current=await get(value.id);
+    assert.equal(current.order.finalTotalCents,null);
+    assert.equal(current.financials[0].balanceCents,before.financials[0].balanceCents);
+    assert.equal((await ok('ListOrderPayments',{id:value.id})).payments.length,0);
+    const history=await events(value.id);
+    assert.equal(history.at(-1).action,'ORDER_MARKED_PAID');
+    assert.equal(history.at(-1).actorUid,claims.sub);
+    assert.deepEqual(history.at(-1).changes,{before:{order:{status:'CONFIRMED'}},after:{order:{status:'PAID'}}});
+    await denied('MarkOrderPaid',{id:value.id,expectedRevision:1},claims,/ORDER_FORBIDDEN/);
+    assert.equal((await events(value.id)).length,2);
+    await ok('CompleteOrder',{id:value.id,expectedRevision:1});
+    await denied('MarkOrderPaid',{id:value.id,expectedRevision:2},admin,/ORDER_FORBIDDEN/);
+  }
+});
+
+test('paid remains an active editable order and money changes never toggle it automatically',async()=>{
+  const value=await create();
+  const paymentId=uuid();
+  await ok('UpdateOrderPricing',{id:value.id,expectedRevision:0,discountCents:0,depositRequiredCents:1000,finalTotalCents:2000});
+  await ok('RecordCashPayment',{id:value.id,expectedRevision:1,paymentId,amountCents:2000});
+  assert.equal((await get(value.id)).order.status,'CONFIRMED');
+  await ok('MarkOrderPaid',{id:value.id,expectedRevision:2});
+  await ok('UpdateOrderPricing',{id:value.id,expectedRevision:3,discountCents:0,depositRequiredCents:1000,finalTotalCents:3000});
+  await ok('UpdateOrderItem',{id:value.id,expectedRevision:4,itemId:value.itemId,quantity:3,unitPriceCents:1000});
+  await ok('RefundCashPayment',{id:value.id,expectedRevision:5,paymentId,refundId:uuid(),amountCents:100},admin);
+  const current=await get(value.id);
+  assert.equal(current.order.status,'PAID');
+  assert.equal(Number(current.financials[0].balanceCents),1100);
+  await denied('ReopenOrder',{id:value.id,expectedRevision:6});
+  await ok('ReopenOrder',{id:value.id,expectedRevision:6},admin);
+  assert.equal((await get(value.id)).order.status,'CONFIRMED');
+  await ok('MarkOrderPaid',{id:value.id,expectedRevision:7});
+  await ok('CancelOrder',{id:value.id,expectedRevision:8,cancellationTotalCents:1900});
+  assert.equal((await get(value.id)).order.status,'CANCELLED');
+  await denied('MarkOrderPaid',{id:value.id,expectedRevision:9},admin,/ORDER_FORBIDDEN/);
+});
+
+test('manual paid transition checks revisions and concurrent attempts produce one audit event',async()=>{
+  const value=await create();
+  await denied('MarkOrderPaid',{id:value.id,expectedRevision:1},staff,/ORDER_CONFLICT/);
+  await denied('MarkOrderPaid',{id:uuid(),expectedRevision:0},staff,/ORDER_CONFLICT/);
+  const attempts=await Promise.all([staff,admin].map(claims=>call('MarkOrderPaid',{id:value.id,expectedRevision:0},claims)));
+  assert.equal(attempts.filter(r=>r.ok).length,1,JSON.stringify(attempts));
+  assert.equal((await events(value.id)).length,2);
+  assert.equal((await get(value.id)).order.revision,1);
 });

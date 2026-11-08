@@ -146,6 +146,15 @@ edits after completion and changes to cancelled orders require admin access.
 Money owing never blocks completion. No order delete or audit-write operation
 is exposed.
 
+Order statuses are `CONFIRMED`, `PAID`,
+`COMPLETED`, and `CANCELLED`. `PAID` is a manual staff confirmation through
+`MarkOrderPaid(id, expectedRevision)`, intended for the UI's button. It does not
+create a payment, require a finalized total, or validate the ledger balance.
+Recording receipts, refunds, or price edits never automatically changes this
+status. The ledger remains the source for numeric balances; show it separately.
+Paid orders remain editable like confirmed orders. Admins can undo the manual
+mark using `ReopenOrder`; the original action stays in audit history.
+
 | Operation | Contract |
 | --- | --- |
 | `CreateOrder` | Caller supplies stable order/item UUIDs and a first product/quantity. Product must be active. Name and catalog price are copied on the server; optional unit-price override. Optional client, phone, schedule, notes and deposit requirement. |
@@ -154,8 +163,9 @@ is exposed.
 | `UpdateOrderPricing` | Full replacement of discount, requested deposit and manual final total; omitted/null final total clears finalization. |
 | `UpdateOrderSchedule` | Sets or clears scheduled pickup. |
 | `AddOrderItem`, `UpdateOrderItem`, `RemoveOrderItem` | Maintain exact subtotal/item count in the same revision-checked transaction. Keep at least one item. Updates preserve catalog/name snapshots; notes are replaced. |
-| `CompleteOrder` | Confirmed to completed, regardless of payment/final-total state. |
-| `CancelOrder` | Requires explicit nonnegative cancellation charge; staff can cancel confirmed orders, admins can also cancel completed orders. No automatic refund. |
+| `MarkOrderPaid` | Staff/admin manually mark a confirmed order PAID; audited, revision-checked, no automatic receipt or balance check. |
+| `CompleteOrder` | Confirmed or paid to completed, regardless of payment/final-total state. |
+| `CancelOrder` | Requires explicit nonnegative cancellation charge; staff can cancel confirmed/paid orders, admins can also cancel completed orders. No automatic refund. |
 | `UpdateCancellationSettlement`, `ReopenOrder` | Admin only. Reopening clears lifecycle timestamps/cancellation charge; history preserves prior values. |
 | `RecordCashPayment` | Staff/admin receipt on any order status; stable caller-generated payment UUID. |
 | `RefundCashPayment` | Admin partial/full refund, stable refund UUID; cannot exceed the original receipt less active refunds. |
@@ -226,6 +236,14 @@ history and restores/verifies native protections after deployment; the initial
 empty-table procedure must not be reused on populated order tables. Audit
 immutability triggers must remain enabled throughout.
 
+For the PAID update, no column/schema deployment is needed because status
+is already text. After a deployment request, apply `migrations/order-paid-status.sql`
+with a trusted PostgreSQL connection **before** the connector-only deployment.
+It atomically broadens the existing order CHECK and preserves all other native
+protections and existing rows. Reapplying the initial integrity file alone does
+not update an existing CHECK. This follow-up migration is repeatable and tested
+against the old three-status constraint.
+
 To verify native protections locally, set `MTL_TEST_PG_MODULE` to the absolute
 path of the `pg` module in a local Firebase CLI installation, then run:
 
@@ -260,3 +278,13 @@ five validated CHECK constraints, three enabled triggers, six RESTRICT foreign
 keys, and zero orders. A read-only cloud GraphQL smoke check of orders, audit
 events and both financial summaries passed. No business records were inserted.
 All 40 regular product/client/order emulator tests passed after the default fix.
+
+### Manual PAID status dev deployment verified 2026-11-07
+
+Applied the reviewed `migrations/order-paid-status.sql` to broaden the existing
+order CHECK, then deployed only `dataconnect:restaurant:staff-admin` to dev.
+Verified that the deployed connector includes `MarkOrderPaid` and the native
+CHECK accepts PAID, with all five validated checks, three enabled triggers and
+six RESTRICT foreign keys retained. Read-only cloud smoke queries passed; zero
+orders existed and no business records were inserted during verification.
+All 47 local product/client/order and native migration tests passed before release.

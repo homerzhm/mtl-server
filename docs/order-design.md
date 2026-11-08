@@ -11,10 +11,18 @@ migration. Production has not been deployed.
 - Pickup only initially. Delivery and dine-in can be added when their workflows
   are defined.
 - Orders can belong to a saved client or an anonymous walk-in.
-- Initial statuses are `CONFIRMED`, `COMPLETED`, and `CANCELLED`, without a draft
-  status or kitchen preparation stages.
+- Statuses are `CONFIRMED`, `PAID`, `COMPLETED`, and `CANCELLED`, without a draft
+  status or kitchen preparation stages. The manual PAID update was deployed to
+  dev on 2026-11-07.
+- Staff/admin manually mark a confirmed order PAID with the UI button backed by
+  `MarkOrderPaid(id, expectedRevision)`. No receipt is created or balance checked.
+  Payments, refunds, and price changes do not automatically toggle the status.
+  Paid orders remain active/editable like confirmed orders; the financial ledger
+  independently supplies the numeric balance. Admin reopening can undo a paid
+  mark without modifying payments, and every transition is audited.
 - Completion means the customer collected the order. An unpaid balance must not
-  block completion or require an override reason.
+  block completion or require an override reason. Both CONFIRMED and PAID can
+  transition directly to COMPLETED or CANCELLED with the existing role rules.
 - Staff choose the requested deposit amount. Record actual payments separately;
   a requested deposit is not money received.
 - Cash is the main initial payment method. Future payment integrations may
@@ -23,7 +31,7 @@ migration. Production has not been deployed.
   Staff decide the settlement, including any remaining amount owed. Cancellation
   must not automatically clear a balance or create a refund. Completed-order
   financial changes retain the admin requirement.
-- Staff can edit confirmed orders, including items and prices, after a payment.
+- Staff can edit confirmed or paid orders, including items and prices, after a payment.
   Preserve payments, recalculate the balance, and expose overpayments without
   automatically refunding them.
 - Completed orders remain editable with action-specific authorization. Financial
@@ -240,7 +248,7 @@ direct SQL maintenance and ensure it follows the same audit policy.
 
 - Include nullable `scheduledFor`; no scheduling mode field is needed.
 - Start with fixed order-level discounts and per-item price overrides.
-- Staff or admins can manage confirmed orders and record newly received cash.
+- Staff or admins can manage confirmed/paid orders and record newly received cash.
   Admins perform corrections/refunds and financial changes after completion.
   Preserve existing product and client permissions.
 - Cancelled-order changes/reopening are admin only. Staff can still record money
@@ -259,3 +267,7 @@ COMPATIBLE validation rejects these custom CHECK/FK definitions during schema
 deployment. Review README.md and the generated SQL before future releases; do
 not accept destructive removal of protections without a controlled maintenance
 procedure. Connector-only deployments can avoid schema validation/migration.
+The manual PAID update uses `migrations/order-paid-status.sql` to broaden the
+existing status CHECK before a connector-only release; the initial integrity
+file also permits PAID when initializing a new database. No new timestamp field
+is needed: the paid-mark audit event supplies the actor and time.

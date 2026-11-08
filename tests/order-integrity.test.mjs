@@ -28,6 +28,9 @@ if (!modulePath) {
     const sql=await readFile(new URL('../migrations/order-integrity.sql',import.meta.url),'utf8');
     await db.query(sql);
     await db.query(sql); // Migration must be safely repeatable.
+    const upgrade=await readFile(new URL('../migrations/order-paid-status.sql',import.meta.url),'utf8');
+    await db.query(upgrade);
+    await db.query(upgrade);
   });
   after(async()=>{await db.end();});
 
@@ -45,6 +48,27 @@ if (!modulePath) {
     await assert.rejects(db.query(sql,params),error=>error.code===code);
     await db.query('ROLLBACK TO SAVEPOINT invalid_write');
   }
+
+  test('paid status upgrade broadens the old CHECK without changing existing orders',async()=>{
+    await transaction(async()=>{
+      const id=await fixture();
+      const {rows:before}=await db.query('SELECT * FROM customer_order WHERE id=$1',[id]);
+      const initial=await readFile(new URL('../migrations/order-integrity.sql',import.meta.url),'utf8');
+      const predicate=initial.match(/\('customer_order', 'customer_order_values_check',\s*\$\$([\s\S]*?)\$\$\)/)[1];
+      const old=predicate.replaceAll(",'PAID'",'');
+      await db.query(`ALTER TABLE customer_order DROP CONSTRAINT customer_order_values_check, ADD CONSTRAINT customer_order_values_check CHECK (${old})`);
+      await fails("UPDATE customer_order SET status='PAID' WHERE id=$1",[id],'23514');
+      const migration=await readFile(new URL('../migrations/order-paid-status.sql',import.meta.url),'utf8');
+      // Keep the test's outer transaction so all fixtures and DDL roll back.
+      await db.query(migration.replace(/^BEGIN;$/m,'').replace(/^COMMIT;$/m,''));
+      const {rows:after}=await db.query('SELECT * FROM customer_order WHERE id=$1',[id]);
+      assert.deepEqual(after,before);
+      await db.query("UPDATE customer_order SET status='PAID' WHERE id=$1",[id]);
+      await fails('UPDATE customer_order SET completed_at=now() WHERE id=$1',[id],'23514');
+      const protections=await db.query("SELECT count(*)::int AS n FROM pg_constraint WHERE contype='f' AND confdeltype='r' AND conrelid IN ('customer_order'::regclass,'order_item'::regclass,'payment'::regclass,'refund'::regclass,'order_audit_event'::regclass)");
+      assert.equal(protections.rows[0].n,6);
+    });
+  });
 
   test('PostgreSQL enforces order values, identity, phone format and unique order numbers',async()=>{
     await transaction(async()=>{

@@ -11,6 +11,7 @@ type Order @table(name: "customer_order", key: ["id"])
   clientId: UUID @index
   contactPhoneNumber: String
   fulfillmentType: String! @default(value: "PICKUP")
+  # CONFIRMED, PAID (manual staff confirmation), COMPLETED, CANCELLED.
   status: String! @default(value: "CONFIRMED")
   scheduledFor: Timestamp
   notes: String
