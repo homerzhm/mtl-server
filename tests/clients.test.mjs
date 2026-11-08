@@ -72,6 +72,7 @@ test('every operation rejects unauthorized users', async () => {
   for (const claims of denied) {
     for (const [operation, variables] of [
       ['ListClients', {}], ['GetClient', {id:value.id}], ['GetClientByPhoneNumber', {phoneNumber:value.phoneNumber}],
+      ['SearchClientsByPhoneNumber', {phoneNumber:'416'}],
       ['CreateClient', draft()], ['UpdateClient', {...value, name:'Denied', expectedRevision:0}]
     ]) {
       const result = await call(operation, variables, claims);
@@ -144,6 +145,57 @@ test('paging returns all clients beyond 100 records', async () => {
     if (page.length<100) break;
   }
   assert.ok(values.every(value=>phones.has(value.phoneNumber)));
+
+  const expected = [...phones].filter(phone=>phone.includes('416555'));
+  const matches = [];
+  for (let offset=0;;offset+=100) {
+    const result = await call('SearchClientsByPhoneNumber', {phoneNumber:'416555', offset});
+    assert.equal(result.ok, true, JSON.stringify(result.body));
+    const page = result.body.data.clients;
+    assert.ok(page.length <= 100);
+    matches.push(...page.map(client=>client.phoneNumber));
+    if (page.length<100) break;
+  }
+  assert.ok(matches.length > 100);
+  assert.deepEqual(matches, expected);
+});
+
+test('phone search matches substrings anywhere and keeps exact lookup separate', async () => {
+  const values = [];
+  for (const phoneNumber of ['+14165559876', '+16475554160', '+16475550416', '+16475559876']) {
+    values.push(await create({...draft(), phoneNumber}));
+  }
+  for (const claims of [staff, admin, {...staff, admin:true}]) {
+    const clients = [];
+    for (let offset=0;;offset+=100) {
+      const result = await call('SearchClientsByPhoneNumber', {phoneNumber:'416', offset}, claims);
+      assert.equal(result.ok, true, JSON.stringify(result.body));
+      clients.push(...result.body.data.clients);
+      if (result.body.data.clients.length<100) break;
+    }
+    assert.ok(clients.every(client=>client.phoneNumber.includes('416')));
+    for (const value of values.slice(0,3)) assert.ok(clients.some(client=>client.phoneNumber === value.phoneNumber));
+    assert.ok(!clients.some(client=>client.phoneNumber === values[3].phoneNumber));
+  }
+  for (const phoneNumber of ['4165559876', '+14165559876']) {
+    const result = await call('SearchClientsByPhoneNumber', {phoneNumber});
+    assert.equal(result.ok, true, JSON.stringify(result.body));
+    assert.deepEqual(result.body.data.clients.map(client=>client.phoneNumber), [values[0].phoneNumber]);
+  }
+  for (const phoneNumber of ['999999999999999']) {
+    const result = await call('SearchClientsByPhoneNumber', {phoneNumber});
+    assert.equal(result.ok, true, JSON.stringify(result.body));
+    assert.deepEqual(result.body.data.clients, []);
+  }
+  for (const phoneNumber of ['%', '_', '416-555', '416 555', 'abc']) {
+    assert.equal((await call('SearchClientsByPhoneNumber', {phoneNumber})).ok, false);
+  }
+  const empty = await call('SearchClientsByPhoneNumber', {phoneNumber:''});
+  const listed = await call('ListClients');
+  assert.equal(empty.ok, true, JSON.stringify(empty.body));
+  assert.equal(listed.ok, true, JSON.stringify(listed.body));
+  assert.deepEqual(empty.body.data.clients, listed.body.data.clients);
+  assert.equal(await get('416'), null);
 });
 
 

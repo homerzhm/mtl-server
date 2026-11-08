@@ -32,6 +32,13 @@ All client operations require Google sign-in and a Boolean `staff:true` **or**
 - `GetClient(id)` returns a client or null.
 - `GetClientByPhoneNumber(phoneNumber)` returns a `clients` array with zero or one
   result, because SQL Connect singular lookups use the primary UUID key.
+- `SearchClientsByPhoneNumber(phoneNumber, offset = 0)` returns clients whose
+  stored phone number contains the literal input anywhere (for example, `416`).
+  Results contain the same fields as `ListClients`, with 100 rows per page in
+  creation-time, UUID order. Continue with offsets 100, 200, etc. until a page
+  has fewer than 100 rows. Input is used as-is without adding a country code;
+  submit digits or canonical international form. Characters other than digits
+  and `+` are rejected. Empty input matches all clients.
 - `ListClients(offset = 0)` returns 100 rows per page in creation-time, UUID order.
   Continue with offsets 100, 200, etc. until a page has fewer than 100 rows.
 - `CreateClient(id, phoneNumber, name?, email?)` inserts a client. Generate a UUID
@@ -72,7 +79,8 @@ send requests to the cloud. They cover authorization for every operation, exact
 cents, optional fields, soft hiding, duplicate names, zero price, validation
 rollback, concurrent updates, missing rows, and description preservation.
 Client tests cover staff/admin access, optional fields, normalized uniqueness,
-phone corrections, transaction rollback, revision conflicts, and pagination.
+phone corrections, transaction rollback, revision conflicts, partial phone
+search, and pagination.
 
 ## Swift SDK generation
 

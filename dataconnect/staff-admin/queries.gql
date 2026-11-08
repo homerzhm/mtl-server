@@ -23,3 +23,9 @@ query GetClientByPhoneNumber($phoneNumber: String!) @auth(expr: "auth.uid != '' 
     id phoneNumber name email revision createdAt
   }
 }
+
+query SearchClientsByPhoneNumber($phoneNumber: String!, $offset: Int! = 0) @auth(expr: "vars.phoneNumber.matches('^[+0-9]*$') && auth.uid != '' && auth.token.firebase.sign_in_provider == 'google.com' && ((has(auth.token.staff) && auth.token.staff == true) || (has(auth.token.admin) && auth.token.admin == true))") {
+  clients(where: {phoneNumber: {contains: $phoneNumber}}, limit: 100, offset: $offset, orderBy: [{createdAt: ASC}, {id: ASC}]) {
+    id phoneNumber name email revision createdAt
+  }
+}
