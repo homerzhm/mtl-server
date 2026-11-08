@@ -64,7 +64,7 @@ Use an ARM-compatible Node installation and current Firebase CLI (tested with
 firebase-tools 15.35.0 / SQL Connect emulator 3.4.25). Then run:
 
 ```sh
-firebase emulators:exec --only dataconnect --project demo-mtl "node --test tests/products.test.mjs tests/clients.test.mjs"
+firebase emulators:exec --only dataconnect --project demo-mtl "node --test tests/products.test.mjs tests/clients.test.mjs tests/orders.test.mjs"
 ```
 
 Tests use unsigned Firebase tokens accepted only by the local emulator and never
@@ -124,3 +124,139 @@ phone-number index. Deployed the schema and `staff-admin` connector to dev
 (`mtl-service-e3e0c`); Firebase confirmed database compatibility and successful
 connector deployment. All 26 local client and product emulator tests passed.
 No client records were inserted into the cloud database during verification.
+
+## Orders (deployed to dev)
+
+The order model is in `dataconnect/schema/orders.gql`; operations are in
+`dataconnect/staff-admin/orders-*.gql`. See `docs/order-design.md` for the workflow.
+Existing product/client operations and permissions are unchanged.
+
+Orders use UUIDs internally and permanent, unique six-character pickup numbers.
+PostgreSQL generates the number from random UUID symbols, replacing ambiguous
+0/1 with G/H. Lookups accept lowercase. A rare number collision rolls back the
+entire create; retry with the **same order and first-item UUIDs**. After an
+uncertain network result, first fetch by order UUID to determine whether creation
+committed. The code is a staff lookup reference, not API authorization.
+
+All order reads and regular writes require Google sign-in with Boolean
+`staff:true` **or** `admin:true`. Admin-only operations require `admin:true`;
+they do not require both claims. Staff can edit confirmed orders, complete them,
+assign clients to completed orders, and receive cash after completion. Financial
+edits after completion and changes to cancelled orders require admin access.
+Money owing never blocks completion. No order delete or audit-write operation
+is exposed.
+
+| Operation | Contract |
+| --- | --- |
+| `CreateOrder` | Caller supplies stable order/item UUIDs and a first product/quantity. Product must be active. Name and catalog price are copied on the server; optional unit-price override. Optional client, phone, schedule, notes and deposit requirement. |
+| `AssignOrderClient` | Sets or clears only the client link. Never replaces the contact snapshot or prices. |
+| `UpdateOrderContact` | Full replacement of phone and internal notes; omission/null clears them. Does not modify the client link. |
+| `UpdateOrderPricing` | Full replacement of discount, requested deposit and manual final total; omitted/null final total clears finalization. |
+| `UpdateOrderSchedule` | Sets or clears scheduled pickup. |
+| `AddOrderItem`, `UpdateOrderItem`, `RemoveOrderItem` | Maintain exact subtotal/item count in the same revision-checked transaction. Keep at least one item. Updates preserve catalog/name snapshots; notes are replaced. |
+| `CompleteOrder` | Confirmed to completed, regardless of payment/final-total state. |
+| `CancelOrder` | Requires explicit nonnegative cancellation charge; staff can cancel confirmed orders, admins can also cancel completed orders. No automatic refund. |
+| `UpdateCancellationSettlement`, `ReopenOrder` | Admin only. Reopening clears lifecycle timestamps/cancellation charge; history preserves prior values. |
+| `RecordCashPayment` | Staff/admin receipt on any order status; stable caller-generated payment UUID. |
+| `RefundCashPayment` | Admin partial/full refund, stable refund UUID; cannot exceed the original receipt less active refunds. |
+| `VoidCashPayment`, `VoidCashRefund` | Admin corrections mark records VOIDED, preserving amounts/history. A receipt with active refunds cannot be voided. Record a corrected receipt/refund separately. |
+
+Except creation, every mutation takes `id` (order UUID) and `expectedRevision`.
+Read the saved order at `data.result.order`. Each successful action increments
+revision exactly once and appends one automatic audit event, including actor UID,
+server time, action and relevant before/after values. Creation starts at revision
+0. Audit timestamps in JSON are strings. There is no reason field or separate
+frontend audit request. Failed transactions create no audit event. A stale or
+missing order produces `ORDER_CONFLICT`; a forbidden status/action produces
+`ORDER_FORBIDDEN`; validation failures roll back. Native PostgreSQL constraint
+errors are also possible when the integrity migration is installed.
+
+Phone numbers follow the client normalization rules and are optional/nonunique
+on orders. Initial client selection copies its phone unless an explicit phone is
+provided; later client/profile edits never silently rewrite an order contact.
+
+`GetOrder` returns the order plus aggregate `financials`. Before manual checkout,
+the balance uses subtotal minus discount and is labelled `isEstimate:true`.
+After checkout it uses `finalTotalCents`; for cancellation it uses
+`cancellationTotalCents`. Item edits preserve an existing manual total. Payments
+minus refunds are derived from the ledger, including every page of records.
+Negative balance means overpayment. No tax is automatically calculated or
+inferred. Amount fields are signed 32-bit nonnegative CAD cents; aggregate
+financial fields are `Int64`. Percentage-discount entry and external payments
+are deferred. External references are reserved for a future trusted integration;
+the staff connector only records cash.
+
+`GetOrderByNumber` returns zero/one orders; `GetOrdersByPhoneNumber` may return
+many. `ListOrders`, phone results, `ListOrderItems`, `ListOrderPayments`,
+`ListOrderRefunds`, and `ListOrderAuditEvents` page at 100 with offsets
+0, 100, etc. Audit events sort by revision; other lists include UUID tie-breakers.
+For live lists, refetch on concurrent changes because offset pagination is not a
+cross-request snapshot. SQL Connect query roots also are not a guaranteed shared
+snapshot; reload `GetOrder` after writes rather than using it for write validation.
+
+On timeout, reuse the original payment/refund UUID. A duplicate ID or stale
+revision returns an error, never another receipt/refund. Inspect the ledger to
+resolve an uncertain outcome before issuing a new UUID. All financial changes
+serialize through the parent order revision, including refunds.
+
+### PostgreSQL integrity migration
+
+`migrations/order-integrity.sql` adds native CHECK constraints, immutable audit
+triggers, immutable order identity, and RESTRICT foreign-key deletion rules.
+SQL Connect cannot declare these protections in the GraphQL schema. The file is
+repeatable and has been tested against local PostgreSQL; it is **not applied by
+Firebase deploy**. The connector already enforces business invariants and offers
+no audit update/delete operations, but native protections require this file.
+
+For a new empty database: review `firebase dataconnect:sql:diff --project dev`,
+apply the additive generated schema migration, deploy the schema/connector, then
+execute this file using a trusted PostgreSQL connection and verify protections.
+Keep `schemaValidation: COMPATIBLE`. No existing-row backfill is needed for the
+new tables. Generate/copy the Swift SDK when integrating the iOS client using the
+existing SDK instructions above.
+
+Deployment caveat verified against dev: even COMPATIBLE validation rejects the
+extra CHECK constraints and RESTRICT delete definitions. Once hardening is
+installed, the SQL diff proposes destructive removal of these protections.
+**Do not run `dataconnect:sql:migrate --force` against a hardened database.**
+For connector-only updates, use `firebase deploy --only
+dataconnect:restaurant:staff-admin --project dev` to avoid a schema deployment.
+Future schema releases require a reviewed maintenance procedure that preserves
+history and restores/verifies native protections after deployment; the initial
+empty-table procedure must not be reused on populated order tables. Audit
+immutability triggers must remain enabled throughout.
+
+To verify native protections locally, set `MTL_TEST_PG_MODULE` to the absolute
+path of the `pg` module in a local Firebase CLI installation, then run:
+
+```sh
+firebase emulators:exec --only dataconnect --project demo-mtl "node --test tests/order-integrity.test.mjs"
+```
+
+That suite applies the migration twice to test repeatability, checks native
+constraints and audit immutability, and reruns the order behavior suite with the
+protections enabled. Both SQL and HTTP targets are fixed to localhost/demo-mtl.
+Without `MTL_TEST_PG_MODULE`, that optional suite reports a skipped test.
+Run it alone, or pass `--test-concurrency=1` when combining it with other test
+files: the emulator's PGlite TCP adapter cannot safely overlap direct SQL sessions
+with connector tests in separate workers.
+
+Local verification on 2026-11-07: all 43 product/client/order and native SQL
+checks passed with serial test-file execution. The native suite also verified
+that the integrity migration can be applied twice.
+
+### Orders dev deployment verified 2026-11-07
+
+Applied the reviewed additive migration for five new tables. Canonicalized the
+pickup-number SQL default to PostgreSQL's reported expression, eliminating
+repeated default migration drift. Deployed the schema and `staff-admin` connector
+to `mtl-service-e3e0c`, keeping COMPATIBLE validation.
+
+The initial hardening-before-deployment attempt exposed the validator caveat
+above. With zero orders confirmed under table locks, temporarily aligned the
+CHECK/FK definitions with the generated schema, retained audit/identity triggers,
+deployed, then immediately reapplied hardening. Final metadata verification found
+five validated CHECK constraints, three enabled triggers, six RESTRICT foreign
+keys, and zero orders. A read-only cloud GraphQL smoke check of orders, audit
+events and both financial summaries passed. No business records were inserted.
+All 40 regular product/client/order emulator tests passed after the default fix.

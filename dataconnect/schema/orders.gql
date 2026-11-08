@@ -1,0 +1,115 @@
+# Monetary fields are CAD cents. Connector transactions validate ranges and
+# cross-row invariants; see migrations/order-integrity.sql for SQL hardening.
+type Order @table(name: "customer_order", key: ["id"])
+  @index(fields: ["createdAt", "id"])
+  @index(fields: ["contactPhoneNumber", "createdAt", "id"]) {
+  id: UUID! @default(expr: "uuidV4()")
+  # Six random hexadecimal symbols, with ambiguous 0/1 replaced by G/H.
+  # Match PostgreSQL's canonical expression to avoid perpetual migration drift.
+  orderNumber: String! @unique @default(sql: "upper(translate(substr((gen_random_uuid())::text, 1, 6), '01'::text, 'gh'::text))")
+  client: Client
+  clientId: UUID @index
+  contactPhoneNumber: String
+  fulfillmentType: String! @default(value: "PICKUP")
+  status: String! @default(value: "CONFIRMED")
+  scheduledFor: Timestamp
+  notes: String
+  subtotalCents: Int!
+  itemCount: Int!
+  discountCents: Int! @default(value: 0)
+  depositRequiredCents: Int! @default(value: 0)
+  # Null until agreed. Item edits never overwrite this manual total.
+  finalTotalCents: Int
+  cancellationTotalCents: Int
+  revision: Int! @default(value: 0)
+  createdAt: Timestamp! @default(expr: "request.time")
+  updatedAt: Timestamp! @default(expr: "request.time")
+  completedAt: Timestamp
+  cancelledAt: Timestamp
+}
+
+type OrderItem @table(key: ["id"]) @index(fields: ["orderId", "createdAt", "id"]) {
+  id: UUID! @default(expr: "uuidV4()")
+  order: Order!
+  orderId: UUID!
+  product: Product!
+  productId: UUID! @index
+  productName: String!
+  catalogUnitPriceCents: Int!
+  unitPriceCents: Int!
+  quantity: Int!
+  notes: String
+  createdAt: Timestamp! @default(expr: "request.time")
+}
+
+# Cash only through staff mutations. Future providers use trusted backend
+# operations, never a staff assertion that an external payment succeeded.
+type Payment @table(key: ["id"]) @index(fields: ["orderId", "createdAt", "id"])
+  @unique(fields: ["provider", "providerReference"]) {
+  id: UUID! @default(expr: "uuidV4()")
+  order: Order!
+  orderId: UUID!
+  amountCents: Int!
+  method: String! @default(value: "CASH")
+  status: String! @default(value: "SUCCEEDED")
+  provider: String
+  providerReference: String
+  receivedAt: Timestamp! @default(expr: "request.time")
+  createdAt: Timestamp! @default(expr: "request.time")
+}
+
+type Refund @table(key: ["id"]) @index(fields: ["paymentId", "createdAt", "id"]) {
+  id: UUID! @default(expr: "uuidV4()")
+  payment: Payment!
+  paymentId: UUID!
+  amountCents: Int!
+  status: String! @default(value: "SUCCEEDED")
+  createdAt: Timestamp! @default(expr: "request.time")
+}
+
+type OrderAuditEvent @table(key: ["id"])
+  @unique(fields: ["orderId", "orderRevision"]) {
+  id: UUID! @default(expr: "uuidV4()")
+  order: Order!
+  orderId: UUID!
+  action: String!
+  actorUid: String! @default(expr: "auth.uid")
+  occurredAt: Timestamp! @default(expr: "request.time")
+  orderRevision: Int!
+  changes: Any!
+}
+
+# Aggregate each ledger separately, avoiding payment/refund join multiplication.
+# Int64 keeps aggregate amounts exact even across many receipts.
+type OrderFinancialSummary @view(sql: """
+  SELECT o.id AS order_id,
+    COALESCE(p.paid, 0)::bigint AS paid_cents,
+    COALESCE(r.refunded, 0)::bigint AS refunded_cents,
+    (COALESCE(p.paid, 0) - COALESCE(r.refunded, 0))::bigint AS net_paid_cents,
+    (CASE WHEN o.status = 'CANCELLED' THEN o.cancellation_total_cents
+      ELSE COALESCE(o.final_total_cents, o.subtotal_cents - o.discount_cents) END
+      - COALESCE(p.paid, 0) + COALESCE(r.refunded, 0))::bigint AS balance_cents,
+    (o.status <> 'CANCELLED' AND o.final_total_cents IS NULL) AS is_estimate
+  FROM customer_order o
+  LEFT JOIN (SELECT order_id, SUM(amount_cents) AS paid FROM payment
+    WHERE status = 'SUCCEEDED' GROUP BY order_id) p ON p.order_id = o.id
+  LEFT JOIN (SELECT p.order_id, SUM(r.amount_cents) AS refunded FROM refund r
+    JOIN payment p ON p.id = r.payment_id
+    WHERE r.status = 'SUCCEEDED' GROUP BY p.order_id) r ON r.order_id = o.id
+""") {
+  orderId: UUID
+  paidCents: Int64
+  refundedCents: Int64
+  netPaidCents: Int64
+  balanceCents: Int64
+  isEstimate: Boolean
+}
+
+type PaymentRefundSummary @view(sql: """
+  SELECT p.id AS payment_id,
+    COALESCE(SUM(r.amount_cents) FILTER (WHERE r.status = 'SUCCEEDED'), 0)::bigint AS refunded_cents
+  FROM payment p LEFT JOIN refund r ON r.payment_id = p.id GROUP BY p.id
+""") {
+  paymentId: UUID
+  refundedCents: Int64
+}

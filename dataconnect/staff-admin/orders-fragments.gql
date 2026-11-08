@@ -1,0 +1,55 @@
+# Shared selections also define the trusted source fields for audit snapshots.
+
+fragment OrderFields on Order {
+  id
+  orderNumber
+  clientId
+  contactPhoneNumber
+  fulfillmentType
+  status
+  scheduledFor
+  notes
+  subtotalCents
+  itemCount
+  discountCents
+  depositRequiredCents
+  finalTotalCents
+  cancellationTotalCents
+  revision
+  createdAt
+  updatedAt
+  completedAt
+  cancelledAt
+}
+
+fragment OrderItemFields on OrderItem {
+  id
+  orderId
+  productId
+  productName
+  catalogUnitPriceCents
+  unitPriceCents
+  quantity
+  notes
+  createdAt
+}
+
+fragment OrderPaymentFields on Payment {
+  id
+  orderId
+  amountCents
+  method
+  status
+  provider
+  providerReference
+  receivedAt
+  createdAt
+}
+
+fragment OrderRefundFields on Refund {
+  id
+  paymentId
+  amountCents
+  status
+  createdAt
+}

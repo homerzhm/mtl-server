@@ -8,6 +8,14 @@ This directory maintains and deploys Firebase services for the restaurant app. T
 - Use `dataconnect/dataconnect.yaml` for SQL Connect service and database settings, `firebase.json` for Firebase and emulator settings, and `.firebaserc` for project aliases.
 - Keep generated emulator files, debug logs, and credentials out of source control.
 
+## Merging into main
+
+- Always squash the branch's changes when merging into `main`, so each merged
+  change contributes exactly one commit to `main`.
+- Use a squash merge for pull requests or `git merge --squash` followed by one
+  commit for local merges. Do not preserve the branch's individual commits or
+  create an additional merge commit on `main`.
+
 ## Product conventions
 
 - Each `Product` row represents one sellable menu item. Store its fixed selling price as integer CAD cents in `priceCents`.

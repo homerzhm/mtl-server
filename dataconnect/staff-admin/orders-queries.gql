@@ -1,0 +1,27 @@
+
+query GetOrder($id: UUID!) @auth(expr: "auth.uid != '' && auth.token.firebase.sign_in_provider == 'google.com' && ((has(auth.token.staff) && auth.token.staff == true) || (has(auth.token.admin) && auth.token.admin == true))") {
+  order(id: $id) { ...OrderFields }
+  financials: orderFinancialSummaries(where: {orderId: {eq: $id}}) {paidCents refundedCents netPaidCents balanceCents isEstimate}
+}
+query GetOrderByNumber($orderNumber: String!) @auth(expr: "auth.uid != '' && auth.token.firebase.sign_in_provider == 'google.com' && ((has(auth.token.staff) && auth.token.staff == true) || (has(auth.token.admin) && auth.token.admin == true))") {
+  orders(where: {orderNumber: {eq_expr: "vars.orderNumber.upperAscii()"}}, limit: 1) { ...OrderFields }
+}
+query GetOrdersByPhoneNumber($phoneNumber: String!, $offset: Int! = 0) @auth(expr: "auth.uid != '' && auth.token.firebase.sign_in_provider == 'google.com' && ((has(auth.token.staff) && auth.token.staff == true) || (has(auth.token.admin) && auth.token.admin == true))") {
+  orders(where: {contactPhoneNumber: {eq_expr: "vars.phoneNumber.matches('^[0-9]{10}$') ? '+1' + vars.phoneNumber : vars.phoneNumber"}}, limit: 100, offset: $offset, orderBy: [{createdAt: DESC}, {id: DESC}]) { ...OrderFields }
+}
+query ListOrders($offset: Int! = 0) @auth(expr: "auth.uid != '' && auth.token.firebase.sign_in_provider == 'google.com' && ((has(auth.token.staff) && auth.token.staff == true) || (has(auth.token.admin) && auth.token.admin == true))") {
+  orders(limit: 100, offset: $offset, orderBy: [{createdAt: DESC}, {id: DESC}]) { ...OrderFields }
+}
+query ListOrderItems($id: UUID!, $offset: Int! = 0) @auth(expr: "auth.uid != '' && auth.token.firebase.sign_in_provider == 'google.com' && ((has(auth.token.staff) && auth.token.staff == true) || (has(auth.token.admin) && auth.token.admin == true))") {
+  orderItems(where: {orderId: {eq: $id}}, limit: 100, offset: $offset, orderBy: [{createdAt: ASC}, {id: ASC}]) { ...OrderItemFields }
+}
+query ListOrderPayments($id: UUID!, $offset: Int! = 0) @auth(expr: "auth.uid != '' && auth.token.firebase.sign_in_provider == 'google.com' && ((has(auth.token.staff) && auth.token.staff == true) || (has(auth.token.admin) && auth.token.admin == true))") {
+  payments(where: {orderId: {eq: $id}}, limit: 100, offset: $offset, orderBy: [{createdAt: ASC}, {id: ASC}]) { ...OrderPaymentFields }
+}
+query ListOrderRefunds($id: UUID!, $offset: Int! = 0) @auth(expr: "auth.uid != '' && auth.token.firebase.sign_in_provider == 'google.com' && ((has(auth.token.staff) && auth.token.staff == true) || (has(auth.token.admin) && auth.token.admin == true))") {
+  refunds(where: {payment: {orderId: {eq: $id}}}, limit: 100, offset: $offset, orderBy: [{createdAt: ASC}, {id: ASC}]) { ...OrderRefundFields }
+}
+query ListOrderAuditEvents($id: UUID!, $offset: Int! = 0) @auth(expr: "auth.uid != '' && auth.token.firebase.sign_in_provider == 'google.com' && ((has(auth.token.staff) && auth.token.staff == true) || (has(auth.token.admin) && auth.token.admin == true))") {
+  orderAuditEvents(where: {orderId: {eq: $id}}, limit: 100, offset: $offset, orderBy: [{orderRevision: ASC}]) {id orderId action actorUid occurredAt orderRevision changes}
+}
+
