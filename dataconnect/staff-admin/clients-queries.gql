@@ -1,0 +1,18 @@
+# Offset pages are consumed fully by the native directory service.
+query ListClientDirectory($phoneNumber: String! = "", $offset: Int! = 0) @auth(expr: "vars.phoneNumber.matches('^[+0-9]*$') && auth.uid != '' && auth.token.firebase.sign_in_provider == 'google.com' && ((has(auth.token.staff) && auth.token.staff == true) || (has(auth.token.admin) && auth.token.admin == true))") {
+  clientDirectoryEntries(where: {phoneNumber: {contains: $phoneNumber}}, limit: 100, offset: $offset,
+    orderBy: [{id: ASC}]) {
+    id phoneNumber name email revision orderCount lastOrderDate netPaidCents
+  }
+}
+query GetClientSummary($id: UUID!) @auth(expr: "auth.uid != '' && auth.token.firebase.sign_in_provider == 'google.com' && ((has(auth.token.staff) && auth.token.staff == true) || (has(auth.token.admin) && auth.token.admin == true))") {
+  clientDirectoryEntries(where: {id: {eq: $id}}, limit: 1) {
+    id phoneNumber name email revision orderCount lastOrderDate netPaidCents
+  }
+}
+query ListClientHistory($id: UUID!, $offset: Int! = 0) @auth(expr: "auth.uid != '' && auth.token.firebase.sign_in_provider == 'google.com' && ((has(auth.token.staff) && auth.token.staff == true) || (has(auth.token.admin) && auth.token.admin == true))") {
+  orders(where: {clientId: {eq: $id}}, limit: 100, offset: $offset,
+    orderBy: [{createdAt: DESC}, {id: DESC}]) {
+    id orderNumber createdAt itemCount status subtotalCents discountCents finalTotalCents cancellationTotalCents
+  }
+}

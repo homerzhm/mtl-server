@@ -303,3 +303,60 @@ CHECK accepts PAID, with all five validated checks, three enabled triggers and
 six RESTRICT foreign keys retained. Read-only cloud smoke queries passed; zero
 orders existed and no business records were inserted during verification.
 All 47 local product/client/order and native migration tests passed before release.
+
+## Native Client directory and history
+
+`ClientDirectoryEntry` is a query-backed summary view. It joins each contact with
+its linked order count (including cancellations), latest non-cancelled order
+creation date, and successful receipts minus successful refunds. Separate ledger
+aggregations avoid multiplying payments and refunds. Retained cancellation
+payments remain in net spent. History follows `Order.clientId` only; edits to
+client phones never change ownership or order contact snapshots.
+
+- `ListClientDirectory(phoneNumber = "", offset = 0)` returns contact fields,
+  revision, order count, last order date, and net paid cents. Phone matching is a
+  literal substring; only digits and `+` are accepted, and empty input matches all
+  clients, consistent with `SearchClientsByPhoneNumber`. Pages contain at most
+  100 rows, ordered by UUID; iOS consumes
+  all pages and sorts by last order descending, then canonical phone and UUID.
+- `GetClientSummary(id)` returns zero or one directory summary.
+- `ListClientHistory(id, offset = 0)` returns up to 100 linked orders, newest
+  creation date then UUID descending, with order number, item count, actual
+  status, and total/estimate fields. This does not expose any new mutation.
+
+All three reads use the existing Google staff-or-admin authorization. Monetary
+aggregates use Int64 CAD cents. No table or column migration is required for this
+query-backed view. The new GraphQL view type must be registered before deploying
+its connector operations. Preserve all native order protections through the
+reviewed schema-maintenance procedure below; never apply the generated destructive
+native-constraint migration directly.
+
+Run local coverage with:
+
+```sh
+firebase emulators:exec --only dataconnect --project demo-mtl "node --test tests/products.test.mjs tests/clients.test.mjs tests/orders.test.mjs tests/client-history.test.mjs"
+```
+
+### Native Clients dev deployment verified 2026-11-09
+
+All 48 product/client/order/history emulator tests passed. The SQL diff proposed
+only the known removal of native CHECK/RESTRICT protections, so no SQL migration
+was applied. A connector-only attempt before registering the new view failed
+validation and left the existing connector intact.
+
+Registered only the additive `clients.gql` source after verifying the other three
+deployed schema sources were byte-for-byte unchanged. Used the established
+maintenance procedure: snapshot all 11 native constraint definitions; install
+transactional write-pause triggers on client/product/order/item/payment/refund/
+audit tables; temporarily match SQL Connect's constraint definitions; register
+GraphQL sources with COMPATIBLE validation and no automatic migration; restore
+the exact original constraints and remove the temporary guards transactionally
+in a finally block. Immutable audit/identity triggers remained enabled throughout.
+Then deployed only `dataconnect:restaurant:staff-admin` to dev.
+
+Verified five validated CHECK constraints, six RESTRICT foreign keys, three enabled
+immutable-data triggers, and preserved PAID status support. The database had zero
+orders before and after registration; no fixtures were written to cloud. The
+signed native app successfully read the empty live directory with its approved
+Firebase session. In future releases, an already-registered view's connector
+changes can deploy alone; new schema types need this reviewed registration step.

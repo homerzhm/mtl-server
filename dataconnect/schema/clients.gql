@@ -1,0 +1,27 @@
+# Separate receipt/refund aggregation prevents join multiplication.
+type ClientDirectoryEntry @view(sql: """
+  SELECT c.id, c.phone_number, c.name, c.email, c.revision,
+    COALESCE(o.order_count, 0)::bigint AS order_count,
+    o.last_order_date,
+    (COALESCE(p.paid, 0) - COALESCE(r.refunded, 0))::bigint AS net_paid_cents
+  FROM client c
+  LEFT JOIN (SELECT client_id, COUNT(*) AS order_count,
+    MAX(created_at) FILTER (WHERE status <> 'CANCELLED') AS last_order_date
+    FROM customer_order GROUP BY client_id) o ON o.client_id = c.id
+  LEFT JOIN (SELECT o.client_id, SUM(p.amount_cents) AS paid
+    FROM payment p JOIN customer_order o ON o.id = p.order_id
+    WHERE p.status = 'SUCCEEDED' GROUP BY o.client_id) p ON p.client_id = c.id
+  LEFT JOIN (SELECT o.client_id, SUM(r.amount_cents) AS refunded
+    FROM refund r JOIN payment p ON p.id = r.payment_id
+    JOIN customer_order o ON o.id = p.order_id
+    WHERE r.status = 'SUCCEEDED' GROUP BY o.client_id) r ON r.client_id = c.id
+""") {
+  id: UUID
+  phoneNumber: String
+  name: String
+  email: String
+  revision: Int
+  orderCount: Int64
+  lastOrderDate: Timestamp
+  netPaidCents: Int64
+}

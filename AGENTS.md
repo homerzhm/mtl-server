@@ -42,14 +42,14 @@ This directory maintains Firebase SQL Connect (`restaurant`), backed by Cloud SQ
 
 ## Staff admin connector
 
-- Client operations live under `dataconnect/staff-admin/`. List and get require
+- Product operations live under `dataconnect/staff-admin/`. List and get require
   a signed-in user. Create and update require Google sign-in and Boolean
   `staff:true` and `admin:true` claims.
 - Product prices are nonnegative signed 32-bit CAD cents. Keep optional Chinese
   names; preserve descriptions and creation timestamps during editor updates.
 - Updates must atomically match and increment `revision`; do not use upsert for
   existing-product edits. The dependent post-write lookups are intentional.
-- Run `firebase emulators:exec --only dataconnect --project demo-mtl "node --test tests/products.test.mjs tests/clients.test.mjs"`
+- Run `firebase emulators:exec --only dataconnect --project demo-mtl "node --test tests/products.test.mjs tests/clients.test.mjs tests/orders.test.mjs tests/client-history.test.mjs"`
   with current Firebase CLI and a native Node runtime. The tests never target cloud.
 - Follow the staged revision migration and Swift SDK generation steps in README.md.
   Generated SDK files under `dataconnect/generated/` are ignored; iOS tracks its copy.
@@ -120,3 +120,24 @@ This directory maintains Firebase SQL Connect (`restaurant`), backed by Cloud SQ
 - Claim synchronization and token refresh are distinct. Do not promise immediate
   revocation of existing ID tokens. Import existing grants with the trusted setup
   command before enabling registration; bootstrap requires an explicit UID.
+
+## Client directory integration
+
+- The native directory uses `ClientDirectoryEntry` and the ListClientDirectory,
+  GetClientSummary, and ListClientHistory reads. Keep stable-ID history separate
+  from phone snapshot lookups. Count cancellations; exclude them only from latest
+  order creation dates. Net spent is successful receipts minus successful refunds.
+- Aggregate receipts and refunds separately to avoid join multiplication. Keep
+  all new reads under the existing Google staff-or-admin policy and page at 100.
+- Keep aggregate CAD cents and order counts as Int64. Exclude voided ledger
+  entries. Return zero aggregates and a null latest date for clients without orders.
+- Directory reads use phone substring filtering and UUID ascending pagination;
+  history uses creation date then UUID descending. Test directory pagination with
+  more than 100 clients, independently of fixtures from other test files.
+- Match existing client phone search validation: accept only digits and `+`,
+  allow empty input to list all contacts, and do not add a country code to fragments.
+- `ClientDirectoryEntry` is query-backed and changes no physical table. Deploy
+  new view types through reviewed GraphQL schema maintenance before deploying
+  their connector additions. Preserve all native constraints and audit triggers;
+  the generated hardened-order SQL diff must not be applied directly. Run
+  `tests/client-history.test.mjs` with the other connector tests.
