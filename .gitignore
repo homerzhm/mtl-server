@@ -5,3 +5,9 @@
 dataconnect/generated/
 
 dataconnect/.dataconnect/
+
+functions/node_modules/
+functions/lib/
+functions/.env*
+!functions/.env.example
+functions/.secret.local

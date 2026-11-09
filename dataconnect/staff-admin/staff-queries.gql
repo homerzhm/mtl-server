@@ -1,0 +1,23 @@
+query GetMyStaffAccount @auth(expr: "auth.uid != '' && auth.token.firebase.sign_in_provider == 'google.com'") {
+  staffAccount(key: {uid_expr: "auth.uid"}) {
+    uid name email photoUrl isStaff isAdmin claimSyncStatus
+  }
+}
+
+query ListStaffDirectory($offset: Int! = 0) @auth(expr: "vars.offset >= 0 && auth.uid != '' && auth.token.firebase.sign_in_provider == 'google.com' && ((has(auth.token.staff) && auth.token.staff == true) || (has(auth.token.admin) && auth.token.admin == true))") {
+  staffAccounts(where: {_or: [{isStaff: {eq: true}}, {isAdmin: {eq: true}}]}, limit: 100, offset: $offset, orderBy: [{createdAt: ASC}, {uid: ASC}]) {
+    uid name email photoUrl isStaff isAdmin
+  }
+}
+
+query ListStaffAccounts($offset: Int! = 0) @auth(expr: "vars.offset >= 0 && auth.uid != '' && auth.token.firebase.sign_in_provider == 'google.com' && has(auth.token.admin) && auth.token.admin == true") {
+  staffAccounts(limit: 100, offset: $offset, orderBy: [{createdAt: ASC}, {uid: ASC}]) {
+    uid name email photoUrl isStaff isAdmin createdAt lastSignInAt revision claimSyncStatus
+  }
+}
+
+query ListStaffRoleChanges($uid: String!, $offset: Int! = 0) @auth(expr: "vars.offset >= 0 && auth.uid != '' && auth.token.firebase.sign_in_provider == 'google.com' && has(auth.token.admin) && auth.token.admin == true") {
+  staffRoleChanges(where: {targetUid: {eq: $uid}}, limit: 100, offset: $offset, orderBy: [{roleRevision: ASC}]) {
+    id actorUid targetUid roleRevision previousStaff previousAdmin isStaff isAdmin status attempts errorCode occurredAt appliedAt
+  }
+}

@@ -65,6 +65,13 @@ requested dev release, review
 migration, and deploy both schema and connector. Generate the Swift SDK as below
 when integrating the operations into iOS.
 
+## Staff profiles and roles (deployed to dev)
+
+The staff account schema, callable backend, setup command, verification, deployment
+procedure, and iOS integration contract are documented in
+[docs/staff-management.md](docs/staff-management.md). The schema, connector and
+Functions are deployed to dev; see the verified release record in that document.
+
 ## Local verification
 
 Use an ARM-compatible Node installation and current Firebase CLI (tested with

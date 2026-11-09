@@ -1,0 +1,40 @@
+# Firebase UID is the identity. Only the trusted Functions backend writes these tables.
+type StaffAccount @table(name: "staff_account", key: ["uid"])
+  @index(fields: ["createdAt", "uid"]) {
+  uid: String!
+  name: String
+  email: String
+  photoUrl: String
+  isStaff: Boolean! @default(value: false)
+  isAdmin: Boolean! @default(value: false)
+  revision: Int! @default(value: 0)
+  # PENDING, APPLIED, FAILED. APPLIED does not mean existing tokens have refreshed.
+  claimSyncStatus: String! @default(value: "APPLIED")
+  createdAt: Timestamp! @default(expr: "request.time")
+  lastSignInAt: Timestamp
+}
+
+type StaffRoleChange @table(name: "staff_role_change", key: ["id"])
+  @unique(fields: ["targetUid", "roleRevision"])
+  @index(fields: ["occurredAt", "id"]) {
+  id: UUID! @default(expr: "uuidV4()")
+  actorUid: String!
+  targetUid: String!
+  roleRevision: Int!
+  previousStaff: Boolean!
+  previousAdmin: Boolean!
+  isStaff: Boolean!
+  isAdmin: Boolean!
+  status: String! @default(value: "PENDING")
+  attempts: Int! @default(value: 0)
+  errorCode: String
+  occurredAt: Timestamp! @default(expr: "request.time")
+  appliedAt: Timestamp
+}
+
+# Singleton `roles`: serializes all role changes, imports and claim reconciliation.
+# pendingChangeId is retained on failure so later changes cannot overtake a retry.
+type StaffRoleControl @table(name: "staff_role_control", key: ["id"]) {
+  id: String!
+  pendingChangeId: UUID
+}

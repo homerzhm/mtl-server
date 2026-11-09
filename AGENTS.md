@@ -1,6 +1,6 @@
 # MTL server
 
-This directory maintains and deploys Firebase services for the restaurant app. The current service is Firebase SQL Connect (`restaurant`), backed by Cloud SQL for PostgreSQL.
+This directory maintains Firebase SQL Connect (`restaurant`), backed by Cloud SQL for PostgreSQL, and TypeScript Firebase Functions for trusted backend operations.
 
 ## Where to work
 
@@ -63,3 +63,60 @@ This directory maintains and deploys Firebase services for the restaurant app. T
   `admin:true`. Keep these permissions separate from product permissions.
 - Client edits atomically match and increment `revision`, preserve `createdAt`,
   and never upsert. Optional fields are a full form replacement; null clears.
+
+## Firebase Functions
+
+- Functions live in `functions/`, use native Node 22 and TypeScript, and share the
+  `server` deployment codebase. Organize each topic under `functions/src/<topic>/`.
+  Staff currently owns `staff/handlers.ts`, `service.ts`, `database.ts`, and `setup.ts`.
+- Keep `functions/src/index.ts` limited to explicit, flat trigger exports. Preserve
+  existing exported names because changing names or nesting exports changes the
+  deployed endpoints. New topics add their own exports here.
+- Keep trigger definitions, request/response handling and dependency wiring in
+  topic handlers; put business rules in injectable services. Trusted CLI setup
+  scripts are separate entrypoints and must never be exported as cloud triggers.
+- Put only reusable infrastructure in `functions/src/shared/`. Reuse the lazy
+  `getAdminApp()` helper; do not initialize the Admin SDK or connect to services
+  at module import time. Topic-specific permissions, database access and parameters
+  stay within that topic until another topic actually needs shared behavior.
+- Configure region, identity, timeouts, instance/concurrency limits and schedules
+  per topic or trigger. Do not use `setGlobalOptions` for topic-specific settings.
+  Bound database pools and instance counts together against the Cloud SQL connection
+  budget; each function scales separately even within one codebase. Staff's role
+  control lock is specific to role changes, not a lock for unrelated topics.
+- Authorize callable requests before initializing external dependencies. Enforce
+  permissions on the server, validate inputs, preserve known `HttpsError`s, and
+  return sanitized errors for unexpected failures. Serialize timestamps explicitly.
+- Use topic-prefixed configuration parameters (currently `STAFF_*`) and dedicated
+  runtime identities with least-privilege IAM/database grants. Keep dotenv files,
+  credentials, `functions/lib/`, and `functions/node_modules/` out of source control.
+- Put tests in `functions/test/<topic>/unit.test.mjs` and `emulator.test.mjs`.
+  Run `npm --prefix functions test` and `npm --prefix functions run test:emulators`.
+  The latter uses disposable native PostgreSQL plus Auth/Functions/SQL Connect
+  emulators for `demo-mtl`; tests must never use cloud services. Extend its isolated
+  local configuration when adding topic parameters or emulator dependencies.
+- Builds clean obsolete compiled modules before compiling. Keep the package lock
+  committed and use `npm --prefix functions ci` for reproducible installs.
+- Functions deployment requires an explicit user request. Pass `--project`; deploy
+  an individual function when appropriate, or `--only functions:server` for the
+  complete codebase. Review the full export inventory before deploying a codebase
+  because omitted existing exports can cause deletion prompts. Production requires
+  an explicit request. Document each topic's setup, IAM, API, tests and rollout.
+
+## Staff role management
+
+- Follow `docs/staff-management.md` for the callable contract, trusted setup/import,
+  configuration, recovery, deployment and later iOS integration.
+- Staff accounts use Firebase UID identity and independent Boolean Staff/Admin
+  flags. Google registration uses trusted Auth profile data and creates pending
+  accounts; it never grants roles from client data or token claims.
+- Existing business operations continue using Firebase claims. Role management
+  additionally requires the actor's current stored Admin flag and current Auth
+  admin access. Never expose direct client role/audit/control writes.
+- Preserve role revisions, history, self-demotion/last-admin protection, and the
+  singleton lock across Auth synchronization and database finalization. Persist
+  requests before writing claims; retain failed requests for idempotent retries
+  and block overlapping changes. Preserve unrelated custom claims.
+- Claim synchronization and token refresh are distinct. Do not promise immediate
+  revocation of existing ID tokens. Import existing grants with the trusted setup
+  command before enabling registration; bootstrap requires an explicit UID.
