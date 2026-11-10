@@ -1,7 +1,7 @@
 # Native live order creation and roast booking
 
-This revision is deployed to dev (`mtl-service-e3e0c`), including removal of the
-activation gate and obsolete table. There is no booking setup or enable step.
+The creation flow and activation-gate removal are deployed to dev (`mtl-service-e3e0c`).
+The native payment/status additions below are also deployed to dev. There is no booking setup or enable step.
 The iOS Orders tab requires these changes before creation can be used. Existing
 order editing, receipt and lifecycle APIs remain separate from this creation flow.
 
@@ -12,7 +12,8 @@ It requires Google authentication and strict Boolean `staff:true` OR `admin:true
 Authorization runs before database construction. Runtime limits are 60 seconds,
 one instance, two concurrent requests and two database connections per instance.
 Each of the three Staff functions uses the same instance/concurrency/pool limits.
-Their combined worst-case pool budget is eight connections; dev allows 25 total,
+With the new `updateStaffOrder` callable, the five triggers have a combined
+worst-case pool budget of ten connections; dev allows 25 total,
 with three reserved for superusers. Leave the remaining capacity for SQL Connect,
 maintenance and other clients. Review the combined budget before raising limits.
 
@@ -109,13 +110,16 @@ ORDERS_RUNTIME_SERVICE_ACCOUNT=<dedicated service account email>
 Enable Cloud SQL IAM authentication and grant Cloud SQL Client and Cloud SQL
 Instance User to that identity. Give it CONNECT to the database, USAGE on public,
 SELECT on product, client, customer_order, order_item, order_roast_allocation,
-order_creation_request, and INSERT on customer_order,
-order_item, order_roast_allocation, order_creation_request and order_audit_event.
+order_creation_request, order_action_request, payment, refund, and INSERT on customer_order,
+order_item, order_roast_allocation, order_creation_request, order_action_request,
+payment and order_audit_event. Grant only column UPDATE on customer_order
+(revision, status, final_total_cents, completed_at, updated_at) for native actions.
 Grant EXECUTE on `public.lock_order_creation_sources(uuid[],uuid)` to the runtime
 login. This SECURITY DEFINER helper takes product/client row locks with its trusted
 owner's permissions, uses a pinned search path and is not executable by PUBLIC.
-The runtime needs no role-admin or Auth-admin grants and no UPDATE/DELETE/TRUNCATE
-grants. Test creation under these restricted grants, not only as a database owner.
+The runtime needs no role-admin or Auth-admin grants, no UPDATE on product/client,
+and no DELETE/TRUNCATE grants. Test creation and actions under the documented
+restricted grants, not only as a database owner.
 Use a separate trusted migration identity for schema and SQL maintenance.
 Keep that identity out of the deployed callable. Verify effective
 privileges, including inherited/public grants, rather than only adding grants.
@@ -131,12 +135,14 @@ local variable. Local tests isolate Functions dotenv settings from developer fil
    constraints, immutable audit/identity triggers and RESTRICT relationships.
    Do not apply a generated hardened-order SQL diff blindly.
 2. Apply the additive GraphQL schema, then the repeatable
-   `migrations/order-roast-booking.sql` migration. It creates the additional
+   `migrations/order-roast-booking.sql` migration, followed by
+   `migrations/order-actions.sql` after the additive OrderActionRequest table. It creates the additional
    protections. Reapply it on existing environments to remove old flag-dependent
    guards. It does not read or seed an activation flag.
 3. Set up the dedicated IAM/database identities and ORDERS parameters. Regenerate
    the Swift SDK, copy it into iOS, run its preparation script and regenerate Tuist.
-4. Deploy connector additions and only `functions:server:createStaffOrder` to an
+4. Deploy connector additions and the individual `functions:server:createStaffOrder`
+   and `functions:server:updateStaffOrder` exports to an
    explicitly selected project. Review the full export inventory before any
    codebase-wide deployment; preserve existing Staff exports.
 5. Release/verify the iOS integration after backend deployment. No activation
@@ -205,3 +211,80 @@ matches local source and no maintenance guards remain. All four Functions are
 ACTIVE with their expected identities, one instance and concurrency two. Orders,
 items, allocations and creation requests remained at zero; no cloud fixtures
 were created.
+
+
+## Native cash payments, Paid and pickup
+
+`updateStaffOrder` is an additive callable in northamerica-northeast1, with the same
+Google staff-or-admin policy, ORDERS runtime identity and 60-second/one-instance/
+two-concurrency/two-pool limits. Authorize before constructing the database pool.
+The dev release is recorded below. Future deployments require an explicit request.
+
+```typescript
+{
+  requestId: string; // stable UUID for this action; also the payment UUID for PAYMENT
+  id: string; // order UUID
+  expectedRevision: number;
+  action: 'PAYMENT' | 'PAID' | 'PICKUP';
+  amountCents?: number | null; // only PAYMENT: positive exact signed Int32 cents
+}
+```
+
+PAYMENT accepts cash on Confirmed orders only. Overpayment is allowed and appears
+as credit; no balance cap is applied. PAID requires successful receipts minus
+successful refunds to cover the saved subtotal less discount. It atomically sets
+that amount as the final total and changes Confirmed to Paid without a receipt.
+An already agreed different total is rejected for pricing review, never silently
+replaced. PICKUP requires Paid and changes it to Completed with server time.
+Payments lock at Paid; this iOS release provides no undo, void or refund UI.
+
+Every action locks the parent order, validates its revision, and saves the write,
+audit and private OrderActionRequest identity/hash in one transaction. Request
+locks serialize identical retries; mismatched actor/payload reuse fails without
+exposing the previous result. Replaying a committed request succeeds even after
+later lifecycle transitions. Never generate a new identity after an uncertain
+result. Actor and timestamp are server-derived. Audit is append-only.
+
+The native guards in order-actions.sql protect allocation-backed orders from
+older connector bypasses: Paid requires covered ledger and saved final total,
+completion requires Paid, and new receipts require Confirmed. Parent row locks
+serialize receipts with lifecycle actions. Legacy rows keep their existing
+connector behavior; admin correction operations retain their existing permissions.
+The native callable enforces its stricter contract for every order it handles.
+
+For existing environments, review the additive OrderActionRequest schema diff,
+apply the table while preserving native constraints/triggers, apply the repeatable
+order-actions.sql, extend the ORDERS database grants as above, then deploy only
+updateStaffOrder to an explicitly selected project. No activation flag is needed.
+Existing generated operation shapes are unchanged; the new private table has no
+SDK operation. No live payment or lifecycle writes are part of local verification.
+
+Action tests cover authorization, tampered/exact cents and overflow, overpayment,
+paid/pickup guards, concurrency, transaction rollback, replay ownership, lost
+responses and actual least-privilege runtime grants, alongside existing connector
+and Functions suites on disposable local PostgreSQL.
+
+## Native actions deployed to dev 2026-11-09
+
+Passed eight unit tests, 75 emulator/integration tests and standalone SQL Connect
+schema validation. Review fixed malformed action arrays passing string-coerced
+validation, added explicit payment/pickup audit timestamps and pinned the new SQL
+guards' search paths. Regression coverage includes discounted totals, successful
+versus voided refunds, preservation of agreed totals, post-pickup retries and
+repeatable migration application.
+
+Reviewed the dev SQL diff and applied only the additive OrderActionRequest table.
+Registered the schema with COMPATIBLE validation during the established write
+pause, restoring all twelve native constraints exactly and preserving all seven
+existing audit/identity/booking triggers. Applied order-actions.sql and granted
+the existing ORDERS runtime SELECT on action requests/payment/refund, INSERT on
+action requests/payment, and UPDATE only on the five documented order columns.
+No product/client UPDATE or table-wide UPDATE/DELETE/TRUNCATE access was granted.
+
+Deployed only functions:server:updateStaffOrder. Read-only verification confirmed
+matching GraphQL sources, both new action guards, preserved native protections,
+and all five Functions ACTIVE with their expected identities, one instance and
+concurrency two. The new callable uses Node 22 and a 60-second timeout and rejects
+anonymous calls. Existing counts remained three orders, three items, two roast
+allocations and three creation requests. No cloud fixtures, live payments or
+lifecycle changes were made for verification.

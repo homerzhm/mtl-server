@@ -4,6 +4,7 @@ import {randomUUID} from 'node:crypto';
 import {readFile} from 'node:fs/promises';
 import pg from 'pg';
 import {OrderCreationService} from '../../lib/orders/service.js';
+import {OrderActionService} from '../../lib/orders/actions.js';
 assert.equal(process.env.GCLOUD_PROJECT,'demo-mtl');
 const pool=new pg.Pool({connectionString:'postgresql://postgres:test-only@127.0.0.1:15432/restaurant',max:8});
 const actor={uid:'order-test',token:{staff:true,firebase:{sign_in_provider:'google.com'}}};
@@ -21,7 +22,8 @@ before(async()=>{
   const token=`${encode({alg:'none'})}.${encode({sub:actor.uid,aud:'demo-mtl',iss:'https://securetoken.google.com/demo-mtl',staff:true,firebase:{sign_in_provider:'google.com'},iat:Math.floor(Date.now()/1000),exp:Math.floor(Date.now()/1000)+3600})}.`;
   const r=await fetch('http://127.0.0.1:9399/v1/projects/demo-mtl/locations/northamerica-northeast1/services/restaurant/connectors/staff-admin:executeQuery',{method:'POST',headers:{'Content-Type':'application/json','x-firebase-auth-token':token},body:JSON.stringify({operationName:'ListOrders',variables:{}})});
   const result=await r.json();assert.equal(!result.errors?.length,true,JSON.stringify(result));
-  for(const migration of ['order-integrity.sql','order-paid-status.sql','order-roast-booking.sql'])await pool.query(await readFile(new URL(`../../../migrations/${migration}`,import.meta.url),'utf8'));
+  for(const migration of ['order-integrity.sql','order-paid-status.sql','order-roast-booking.sql','order-actions.sql'])await pool.query(await readFile(new URL(`../../../migrations/${migration}`,import.meta.url),'utf8'));
+  await pool.query(await readFile(new URL('../../../migrations/order-actions.sql',import.meta.url),'utf8')); // Repeatable upgrade.
   product=randomUUID();await pool.query('INSERT INTO product(id,name,price_cents,is_active,is_lechon,revision,created_at) VALUES($1,\'Test pig\',100,true,true,0,now())',[product]);
 });
 after(async()=>{await pool.end();});
@@ -156,4 +158,105 @@ test('dedicated runtime creates with SELECT/INSERT and helper EXECUTE only',asyn
     await pool.query('DROP OWNED BY orders_runtime_test');
     await pool.query('DROP ROLE orders_runtime_test');
   }
+});
+
+const actions=new OrderActionService(pool);
+const action=(id,expectedRevision,kind,amountCents=null)=>({requestId:randomUUID(),id,expectedRevision,action:kind,amountCents});
+async function actionOrder() {
+  const addon=randomUUID();await pool.query("INSERT INTO product(id,name,price_cents,is_active,is_lechon,revision,created_at) VALUES($1,'Cash test',100,true,false,0,now())",[addon]);
+  const v=input();v.items[0].productId=addon;v.allocations=[];await service.create(actor,v);return v.id;
+}
+test('cash overpayment, finalization and pickup are audited, atomic and retry safe',async()=>{
+  const id=await actionOrder();
+  await assert.rejects(actions.perform(actor,action(id,0,'PAID')),/ORDER_BALANCE_DUE/);
+  await assert.rejects(actions.perform(actor,action(id,0,'PICKUP')),/ORDER_NOT_PAID/);
+  const pay=action(id,0,'PAYMENT',150);
+  await actions.perform(actor,pay);await actions.perform(actor,pay); // lost response retry
+  assert.equal((await pool.query('SELECT count(*)::int n FROM payment WHERE order_id=$1',[id])).rows[0].n,1);
+  await assert.rejects(actions.perform({...actor,uid:'other'},pay),/REQUEST_CONFLICT/);
+  await assert.rejects(actions.perform(actor,{...pay,amountCents:151}),/REQUEST_CONFLICT/);
+  const paid=action(id,1,'PAID');await actions.perform(actor,paid);await actions.perform(actor,paid);
+  const saved=(await pool.query('SELECT * FROM customer_order WHERE id=$1',[id])).rows[0];
+  assert.equal(saved.final_total_cents,100);assert.equal(saved.status,'PAID');
+  await assert.rejects(actions.perform(actor,action(id,2,'PAYMENT',1)),/ORDER_LOCKED/);
+  await actions.perform(actor,action(id,2,'PICKUP'));
+  await actions.perform(actor,pay); // Committed request still replays after later transitions.
+  const pickupAudit=(await pool.query('SELECT changes FROM order_audit_event WHERE order_id=$1 AND order_revision=3',[id])).rows[0].changes;
+  assert.equal(pickupAudit.before.completedAt,null);
+  assert.equal(pickupAudit.after.completedAt,(await pool.query('SELECT completed_at FROM customer_order WHERE id=$1',[id])).rows[0].completed_at.toISOString());
+  await assert.rejects(actions.perform(actor,action(id,3,'PAYMENT',1)),/ORDER_LOCKED/);
+  assert.equal((await pool.query("SELECT count(*)::int n FROM order_audit_event WHERE order_id=$1 AND actor_uid=$2",[id,actor.uid])).rows[0].n,4);
+  assert.equal((await query('GetOrder',{id})).order.status,'COMPLETED');
+  assert.equal(Number((await query('GetOrder',{id})).financials[0].balanceCents),-50);
+});
+test('Paid uses discounted totals and net successful ledger entries, preserving agreed totals',async()=>{
+  const id=await actionOrder();
+  const first=action(id,0,'PAYMENT',60),second=action(id,1,'PAYMENT',40);
+  await actions.perform(actor,first);await actions.perform(actor,second);
+  await pool.query('UPDATE customer_order SET discount_cents=20,final_total_cents=90 WHERE id=$1',[id]);
+  await assert.rejects(actions.perform(actor,action(id,2,'PAID')),/ORDER_TOTAL_REVIEW/);
+  assert.equal((await pool.query('SELECT final_total_cents FROM customer_order WHERE id=$1',[id])).rows[0].final_total_cents,90);
+  await pool.query('UPDATE customer_order SET final_total_cents=NULL WHERE id=$1',[id]);
+  const refund=randomUUID();
+  await pool.query("INSERT INTO refund(id,payment_id,amount_cents,status,created_at) VALUES($1,$2,30,'SUCCEEDED',now()),($3,$2,5,'VOIDED',now())",[refund,first.requestId,randomUUID()]);
+  await assert.rejects(actions.perform(actor,action(id,2,'PAID')),/ORDER_BALANCE_DUE/);
+  await pool.query("UPDATE refund SET status='VOIDED' WHERE id=$1",[refund]);
+  await actions.perform(actor,action(id,2,'PAID'));
+  assert.equal((await pool.query('SELECT final_total_cents FROM customer_order WHERE id=$1',[id])).rows[0].final_total_cents,80);
+  assert.equal((await pool.query('SELECT count(*)::int n FROM payment WHERE order_id=$1',[id])).rows[0].n,2);
+});
+test('competing actions cannot bypass revision, insert twice or partially commit',async()=>{
+  const id=await actionOrder(),a=action(id,0,'PAYMENT',100),b=action(id,0,'PAYMENT',100);
+  const result=await Promise.allSettled([actions.perform(actor,a),actions.perform(actor,b)]);
+  assert.equal(result.filter(r=>r.status==='fulfilled').length,1);
+  assert.match(result.find(r=>r.status==='rejected').reason.message,/ORDER_CONFLICT/);
+  // Force the final request insert to fail after order/payment/audit writes.
+  await pool.query(`CREATE OR REPLACE FUNCTION fail_action_test() RETURNS trigger LANGUAGE plpgsql AS $$ BEGIN RAISE EXCEPTION 'rollback test'; END $$;
+    CREATE TRIGGER fail_action_test BEFORE INSERT ON order_action_request FOR EACH ROW EXECUTE FUNCTION fail_action_test()`);
+  const failed=action(id,1,'PAYMENT',25);
+  try {await assert.rejects(actions.perform(actor,failed),/rollback test/);}
+  finally {await pool.query('DROP TRIGGER fail_action_test ON order_action_request; DROP FUNCTION fail_action_test()');}
+  assert.equal((await pool.query('SELECT revision FROM customer_order WHERE id=$1',[id])).rows[0].revision,1);
+  assert.equal((await pool.query('SELECT count(*)::int n FROM payment WHERE id=$1',[failed.requestId])).rows[0].n,0);
+  await actions.perform(actor,failed);
+});
+test('native status/payment guards reject old mutation bypasses, including concurrent payment and Paid',async()=>{
+  const id=await actionOrder();
+  await assert.rejects(pool.query("UPDATE customer_order SET status='PAID' WHERE id=$1",[id]),/ORDER_BALANCE_DUE/);
+  await assert.rejects(pool.query("UPDATE customer_order SET status='COMPLETED',completed_at=now() WHERE id=$1",[id]),/ORDER_NOT_PAID/);
+  await actions.perform(actor,action(id,0,'PAYMENT',100));
+  await assert.rejects(pool.query("UPDATE customer_order SET status='PAID' WHERE id=$1",[id]),/ORDER_TOTAL_REVIEW/);
+  const result=await Promise.allSettled([actions.perform(actor,action(id,1,'PAID')),actions.perform(actor,action(id,1,'PAYMENT',10))]);
+  assert.equal(result.filter(r=>r.status==='fulfilled').length,1);
+  const saved=(await pool.query('SELECT status,revision FROM customer_order WHERE id=$1',[id])).rows[0];
+  if(saved.status==='CONFIRMED')await actions.perform(actor,action(id,saved.revision,'PAID'));
+  await assert.rejects(pool.query("INSERT INTO payment(id,order_id,amount_cents,method,status,received_at,created_at) VALUES($1,$2,10,'CASH','SUCCEEDED',now(),now())",[randomUUID(),id]),/ORDER_LOCKED/);
+});
+test('order action callable rejects anonymous callers and enforces actual restricted runtime grants',async()=>{
+  const endpoint='http://127.0.0.1:5001/demo-mtl/northamerica-northeast1/updateStaffOrder';
+  const denied=await fetch(endpoint,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({data:{}})});
+  assert.equal((await denied.json()).error.status,'UNAUTHENTICATED');
+  const callableID=await actionOrder();
+  const token=`${encode({alg:'none'})}.${encode({sub:actor.uid,aud:'demo-mtl',iss:'https://securetoken.google.com/demo-mtl',staff:true,firebase:{sign_in_provider:'google.com'},iat:Math.floor(Date.now()/1000),exp:Math.floor(Date.now()/1000)+3600})}.`;
+  const request=action(callableID,0,'PAYMENT',125);
+  for(let attempt=0;attempt<2;attempt++) {
+    const response=await fetch(endpoint,{method:'POST',headers:{'Content-Type':'application/json',Authorization:`Bearer ${token}`},body:JSON.stringify({data:request})});
+    const body=await response.json();assert.equal(body.result.id,callableID,JSON.stringify(body));
+  }
+  assert.equal((await pool.query('SELECT count(*)::int n FROM payment WHERE order_id=$1',[callableID])).rows[0].n,1);
+  const native=input();native.scheduledFor='2030-07-01T18:00:00.000Z';await service.create(actor,native);const id=native.id;
+  await pool.query(`CREATE ROLE action_runtime LOGIN PASSWORD 'test-only';
+    GRANT USAGE ON SCHEMA public TO action_runtime;
+    GRANT SELECT ON customer_order,payment,refund,order_action_request,order_roast_allocation,order_item,product TO action_runtime;
+    GRANT UPDATE(revision,status,final_total_cents,completed_at,updated_at) ON customer_order TO action_runtime;
+    GRANT INSERT ON payment,order_action_request,order_audit_event TO action_runtime`);
+  const restricted=new pg.Pool({connectionString:'postgresql://action_runtime:test-only@127.0.0.1:15432/restaurant',max:2});
+  try {
+    const service=new OrderActionService(restricted);
+    await service.perform(actor,action(id,0,'PAYMENT',100));
+    await service.perform({...actor,token:{admin:true,firebase:{sign_in_provider:'google.com'}}},action(id,1,'PAID'));
+    await service.perform(actor,action(id,2,'PICKUP'));
+    for(const token of [{staff:'true'}, {staff:true,firebase:{sign_in_provider:'password'}},{}])
+      await assert.rejects(service.perform({uid:'bad',token},action(id,3,'PAYMENT',10)),{code:'permission-denied'});
+  } finally {await restricted.end();}
 });

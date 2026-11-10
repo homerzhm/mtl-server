@@ -20,3 +20,13 @@ test('Toronto clock crosses DST and rejects elapsed blocks and non-quarter picku
   assert.throws(()=>validateTiming(input(),new Date('2030-06-01T17:00:00Z')),{code:'failed-precondition'});
   assert.throws(()=>validateTiming({...input(),scheduledFor:'2030-06-01T18:01:00Z'},new Date('2030-05-01')));
 });
+
+test('order actions validate exact positive Int32 cents, revisions and request identity', async()=>{
+  const {validateAction}=await import('../../lib/orders/actions.js');
+  const v={requestId:randomUUID(),id:randomUUID(),expectedRevision:0,action:'PAYMENT',amountCents:2147483647};
+  assert.equal(validateAction(v).amountCents,2147483647);
+  for(const patch of [{amountCents:0},{amountCents:-1},{amountCents:1.1},{amountCents:2147483648},{amountCents:'100'},
+    {expectedRevision:-1},{expectedRevision:2147483647},{requestId:'bad'},{action:'OTHER'},{action:['PAID'],amountCents:null},
+    {action:['PICKUP'],amountCents:null},{extra:true},{action:'PAID',amountCents:100}])
+    assert.throws(()=>validateAction({...v,...patch}),{code:'invalid-argument'});
+});

@@ -158,7 +158,8 @@ All order reads and regular writes require Google sign-in with Boolean
 they do not require both claims. Staff can edit confirmed orders, complete them,
 assign clients to completed orders, and receive cash after completion. Financial
 edits after completion and changes to cancelled orders require admin access.
-Money owing never blocks completion. No order delete or audit-write operation
+For legacy orders, money owing never blocks completion. Allocation-backed native
+orders additionally enforce the stricter payment/status guards described below. No order delete or audit-write operation
 is exposed.
 
 Order statuses are `CONFIRMED`, `PAID`,
@@ -374,7 +375,23 @@ No cloud deployment is implied by code.
 
 Dev deployment was verified on 2026-11-09 with 77 passing local tests. Schema,
 connector and callable are deployed; native integrity protections are preserved.
-The four server Functions share an eight-connection worst-case pool budget.
+The five server Functions (including the native action callable) have a
+ten-connection worst-case pool budget.
 The activation gate and obsolete table were removed from dev on 2026-11-09.
 The updated callable and schema are deployed; all native constraints and triggers
 were preserved. See [Live order booking](docs/live-order-booking.md) for the release record.
+
+
+### Native payment and pickup integration (deployed to dev)
+
+The additive `updateStaffOrder` callable records Confirmed-only cash payments
+(overpayment allowed), marks covered orders Paid while finalizing the saved item
+total, and completes pickup only from Paid. Paid adds no receipt and locks new
+payments. UUID/actor/payload retry identities and revision locks prevent duplicate
+payments after interrupted responses. Legacy connector contracts above remain
+unchanged for legacy rows; allocation-backed orders enforce stricter native guards.
+See [live order booking](docs/live-order-booking.md#native-cash-payments-paid-and-pickup)
+for the additive table, repeatable migration, restricted runtime grants and
+explicit deployment sequence. Deployed to dev on 2026-11-09 after eight unit tests,
+75 emulator/integration tests and standalone schema validation passed. Release
+verification used no live payment or lifecycle writes.

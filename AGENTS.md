@@ -83,8 +83,8 @@ This directory maintains Firebase SQL Connect (`restaurant`), backed by Cloud SQ
   per topic or trigger. Do not use `setGlobalOptions` for topic-specific settings.
   Bound database pools and instance counts together against the Cloud SQL connection
   budget; each function scales separately even within one codebase. Dev has 25
-  connections (three reserved): all four current triggers use maxInstances 1,
-  concurrency 2 and pool max 2, totaling at most eight pooled connections. Staff's role
+  connections (three reserved): all five current triggers use maxInstances 1,
+  concurrency 2 and pool max 2, totaling at most ten pooled connections. Staff's role
   control lock is specific to role changes, not a lock for unrelated topics.
 - Authorize callable requests before initializing external dependencies. Enforce
   permissions on the server, validate inputs, preserve known `HttpsError`s, and
@@ -172,3 +172,20 @@ This directory maintains Firebase SQL Connect (`restaurant`), backed by Cloud SQ
   Preserve capacity enforcement and legacy-write guards without flag-dependent
   conditions.
   No cloud deployment is implied by edits.
+
+## Native order actions
+
+- `updateStaffOrder` atomically records cash, marks Paid or completes pickup using
+  stable request UUIDs, actor/payload ownership, parent revision locks and audit.
+- Cash is Confirmed-only; exact positive Int32 cents may exceed the balance.
+  Paid requires no outstanding saved subtotal less discount, finalizes that amount
+  without creating a receipt, and locks payments. Pickup requires Paid.
+- Apply additive OrderActionRequest schema and `migrations/order-actions.sql`
+  before the new callable. Managed native orders reject legacy payment/status
+  bypasses; retain legacy rows' connector behavior and existing admin corrections.
+- ORDERS runtime now needs SELECT on payment/refund/action requests, INSERT on
+  payment/action requests and column UPDATE only on customer_order revision,
+  status, final_total_cents, completed_at and updated_at. No product/client UPDATE.
+- iOS journals unresolved requests per account/order for explicit retries across
+  restarts. Never auto-replay a payment or replace an uncertain request identity.
+- No cloud deployment or live payment/status writes are implied by edits.

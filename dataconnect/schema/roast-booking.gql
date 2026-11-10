@@ -53,3 +53,10 @@ type StaffOrderSummary @view(sql: """
   description: String
   pigCount: Int64
 }
+
+# Private retry identities; no connector read/write operation exposes these.
+type OrderActionRequest @table {
+  id: UUID!
+  actorUid: String!
+  payloadHash: String!
+}
