@@ -157,9 +157,9 @@ This directory maintains Firebase SQL Connect (`restaurant`), backed by Cloud SQ
   must be future; pickup is a 15-minute time at/after the last allocated block.
 - Serialize capacity changes with the shared per-date advisory lock. Cancellation
   releases occupancy, completion retains it, and reopening checks capacity. Block
-  unmanaged lechon reopening after activation until a separate backfill. Keep
+  unmanaged lechon reopening without an allocation-aware workflow. Keep
   SQL guards blocking legacy item/schedule edits of managed orders and legacy
-  unallocated lechon creation after activation.
+  unallocated lechon creation.
 - Availability/summary types are query-backed reads, not physical SQL views.
   Number and phone searches use separate exact operations; avoid nullable equality
   filters for unfiltered browsing. Page every read at 100 with stable ordering.
@@ -167,7 +167,8 @@ This directory maintains Firebase SQL Connect (`restaurant`), backed by Cloud SQ
   the Orders runtime product/client UPDATE just to take row locks. Test its actual
   restricted database permissions.
 - `ORDERS_*` configuration and a dedicated least-privilege runtime identity are
-  separate from Staff roles. Keep trusted rollout setup out of trigger exports.
-- New schema/migration leaves booking disabled. Enable only through explicit
-  trusted setup after checking for unmanaged active lechon orders; a failed check
-  requires a separate backfill decision. No cloud deployment is implied by edits.
+  separate from Staff roles. Keep migration/operator identities out of triggers.
+- Booking has no activation gate, enable flag, rollout table or setup script.
+  Preserve capacity enforcement and legacy-write guards without flag-dependent
+  conditions.
+  No cloud deployment is implied by edits.

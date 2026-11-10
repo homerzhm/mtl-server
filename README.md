@@ -365,14 +365,16 @@ changes can deploy alone; new schema types need this reviewed registration step.
 
 The additive native integration deployed to dev is documented in
 [Live order booking](docs/live-order-booking.md): atomic multi-item creation,
-idempotent retries, real capacity enforcement, read summaries and a gated rollout.
+idempotent retries, real capacity enforcement, read summaries and no separate booking activation step.
 It adds the `createStaffOrder` callable without changing existing flat Staff
 exports. Apply the reviewed additive schema and booking integrity migration before
-its trusted fresh-environment activation. No cloud deployment is implied by code.
+deploying the callable revision. Booking needs no activation script or flag.
+No cloud deployment is implied by code.
 
 
 Dev deployment was verified on 2026-11-09 with 77 passing local tests. Schema,
 connector and callable are deployed; native integrity protections are preserved.
 The four server Functions share an eight-connection worst-case pool budget.
-Booking activation remains disabled; see the detailed release record and separate
-activation procedure in [Live order booking](docs/live-order-booking.md).
+The activation gate and obsolete table were removed from dev on 2026-11-09.
+The updated callable and schema are deployed; all native constraints and triggers
+were preserved. See [Live order booking](docs/live-order-booking.md) for the release record.

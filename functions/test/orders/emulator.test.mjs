@@ -3,7 +3,6 @@ import assert from 'node:assert/strict';
 import {randomUUID} from 'node:crypto';
 import {readFile} from 'node:fs/promises';
 import pg from 'pg';
-import {spawnSync} from 'node:child_process';
 import {OrderCreationService} from '../../lib/orders/service.js';
 assert.equal(process.env.GCLOUD_PROJECT,'demo-mtl');
 const pool=new pg.Pool({connectionString:'postgresql://postgres:test-only@127.0.0.1:15432/restaurant',max:8});
@@ -23,10 +22,9 @@ before(async()=>{
   const r=await fetch('http://127.0.0.1:9399/v1/projects/demo-mtl/locations/northamerica-northeast1/services/restaurant/connectors/staff-admin:executeQuery',{method:'POST',headers:{'Content-Type':'application/json','x-firebase-auth-token':token},body:JSON.stringify({operationName:'ListOrders',variables:{}})});
   const result=await r.json();assert.equal(!result.errors?.length,true,JSON.stringify(result));
   for(const migration of ['order-integrity.sql','order-paid-status.sql','order-roast-booking.sql'])await pool.query(await readFile(new URL(`../../../migrations/${migration}`,import.meta.url),'utf8'));
-  await pool.query('UPDATE order_booking_rollout SET enabled=true');
   product=randomUUID();await pool.query('INSERT INTO product(id,name,price_cents,is_active,is_lechon,revision,created_at) VALUES($1,\'Test pig\',100,true,true,0,now())',[product]);
 });
-after(async()=>{await pool.query('UPDATE order_booking_rollout SET enabled=false');await pool.end();});
+after(async()=>{await pool.end();});
 test('atomic creation, summaries, idempotent retry and payload ownership',async()=>{
   const v=input();const result=await service.create(actor,v);assert.equal(result.id,v.id);
   assert.deepEqual(await service.create(actor,v),result);
@@ -104,18 +102,17 @@ test('real callable authorizes staff and rejects unauthenticated creation',async
   assert.deepEqual(await call(true),saved);
 });
 
-test('rollout stays disabled until a trusted fresh-environment check passes',async()=>{
-  await pool.query('UPDATE order_booking_rollout SET enabled=false');
-  const v=input();await assert.rejects(service.create(actor,v),/BOOKING_NOT_ENABLED/);
-  const legacy=randomUUID(),item=randomUUID();
-  await pool.query("INSERT INTO customer_order(id,order_number,subtotal_cents,item_count,created_at,updated_at) VALUES($1,'ZEGACY',100,1,now(),now())",[legacy]);
-  await pool.query("INSERT INTO order_item(id,order_id,product_id,product_name,catalog_unit_price_cents,unit_price_cents,quantity,created_at) VALUES($1,$2,$3,'Legacy pig',100,100,1,now())",[item,legacy,product]);
-  const setup=()=>spawnSync(process.execPath,['functions/lib/orders/setup.js','--project','demo-mtl'],{cwd:new URL('../../../',import.meta.url),env:process.env,encoding:'utf8'});
-  const blocked=setup();assert.notEqual(blocked.status,0);assert.match(blocked.stderr,/backfill decision/);
-  assert.equal((await pool.query('SELECT enabled FROM order_booking_rollout')).rows[0].enabled,false);
-  await pool.query("UPDATE customer_order SET status='CANCELLED',cancelled_at=now(),cancellation_total_cents=0 WHERE id=$1",[legacy]);
-  const ready=setup();assert.equal(ready.status,0,ready.stderr);
-  assert.equal((await pool.query('SELECT enabled FROM order_booking_rollout')).rows[0].enabled,true);
+test('unallocated legacy lechon creation and reopening remain blocked without an activation gate',async()=>{
+  const db=await pool.connect();
+  try {
+    await db.query('BEGIN');
+    const id=randomUUID();
+    await db.query("INSERT INTO customer_order(id,order_number,subtotal_cents,item_count,created_at,updated_at) VALUES($1,'ZEGACY',100,1,now(),now())",[id]);
+    await assert.rejects(db.query("INSERT INTO order_item(id,order_id,product_id,product_name,catalog_unit_price_cents,unit_price_cents,quantity,created_at) VALUES($1,$2,$3,'Legacy pig',100,100,1,now())",[randomUUID(),id,product]),/ALLOCATION_AWARE_CREATE_REQUIRED/);
+  } finally { await db.query('ROLLBACK');db.release(); }
+  const legacy=randomUUID();
+  await pool.query("INSERT INTO customer_order(id,order_number,subtotal_cents,item_count,status,cancelled_at,cancellation_total_cents,created_at,updated_at) VALUES($1,'ZEGACY',100,1,'CANCELLED',now(),0,now(),now())",[legacy]);
+  await pool.query("INSERT INTO order_item(id,order_id,product_id,product_name,catalog_unit_price_cents,unit_price_cents,quantity,created_at) VALUES($1,$2,$3,'Legacy pig',100,100,1,now())",[randomUUID(),legacy,product]);
   await assert.rejects(pool.query("UPDATE customer_order SET status='CONFIRMED',cancelled_at=null,cancellation_total_cents=null WHERE id=$1",[legacy]),/ALLOCATION_AWARE_REOPEN_REQUIRED/);
   assert.equal((await pool.query('SELECT status FROM customer_order WHERE id=$1',[legacy])).rows[0].status,'CANCELLED');
 });
@@ -142,7 +139,7 @@ test('phone summary pagination passes 100 rows and ledger aggregates do not mult
 test('dedicated runtime creates with SELECT/INSERT and helper EXECUTE only',async()=>{
   await pool.query('CREATE ROLE orders_runtime_test NOLOGIN');
   await pool.query('GRANT USAGE ON SCHEMA public TO orders_runtime_test');
-  await pool.query('GRANT SELECT ON product,client,customer_order,order_item,order_roast_allocation,order_creation_request,order_booking_rollout TO orders_runtime_test');
+  await pool.query('GRANT SELECT ON product,client,customer_order,order_item,order_roast_allocation,order_creation_request TO orders_runtime_test');
   await pool.query('GRANT INSERT ON customer_order,order_item,order_roast_allocation,order_creation_request,order_audit_event TO orders_runtime_test');
   await pool.query('GRANT EXECUTE ON FUNCTION public.lock_order_creation_sources(uuid[],uuid) TO orders_runtime_test');
   const restricted=new pg.Pool({connectionString:'postgresql://postgres:test-only@127.0.0.1:15432/restaurant',max:1,options:'-c role=orders_runtime_test'});

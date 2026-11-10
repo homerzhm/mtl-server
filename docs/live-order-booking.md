@@ -1,7 +1,7 @@
 # Native live order creation and roast booking
 
-This additive implementation is deployed to dev (`mtl-service-e3e0c`). Booking
-activation remains disabled until the separate trusted rollout step is requested.
+This revision is deployed to dev (`mtl-service-e3e0c`), including removal of the
+activation gate and obsolete table. There is no booking setup or enable step.
 The iOS Orders tab requires these changes before creation can be used. Existing
 order editing, receipt and lifecycle APIs remain separate from this creation flow.
 
@@ -59,7 +59,7 @@ without exposing the existing record. An uncertain response must be retried with
 the exact payload and IDs; do not start a replacement request automatically.
 
 Expected failures include CATALOG_CHANGED, ROAST_CAPACITY, PICKUP_EXPIRED,
-CLIENT_UNAVAILABLE, BOOKING_NOT_ENABLED and REQUEST_CONFLICT. Unexpected errors
+CLIENT_UNAVAILABLE and REQUEST_CONFLICT. Unexpected errors
 are logged server-side and sanitized as an uncertain result. iOS freezes that
 pending payload until reconciliation, while known rejected writes retain an
 editable draft.
@@ -79,13 +79,14 @@ SQL triggers acquire those same locks for cancellation and reopening; reopening
 checks the resulting occupancy. Completed orders retain their places. Cancelled
 orders retain allocation history but no longer consume capacity. Existing order
 item/schedule mutations reject booking-managed orders, including add-on-only ones.
-After activation, the old one-item creation path cannot create unallocated active
+The old one-item creation path cannot create unallocated active
 lechon orders. Reopening cancelled/completed unmanaged lechon orders is also
-blocked after activation until a separate allocation backfill is agreed. Legacy
+blocked unless allocations have been handled through an allocation-aware workflow. Legacy
 orders remain readable.
 
 The schema adds a nullable item lechon snapshot, booking-managed flag, allocation
-and request tables, and a rollout gate. Unknown legacy lechon counts remain null.
+and request tables. Unknown legacy lechon counts remain null. No activation
+table or runtime activation permission is required.
 `StaffOrderSummary` and `RoastAvailability` are SQL Connect query-backed types,
 not physical PostgreSQL views. Summaries aggregate items and financial data without
 per-order downloads and without multiplying payment/refund joins. Number and phone
@@ -108,15 +109,15 @@ ORDERS_RUNTIME_SERVICE_ACCOUNT=<dedicated service account email>
 Enable Cloud SQL IAM authentication and grant Cloud SQL Client and Cloud SQL
 Instance User to that identity. Give it CONNECT to the database, USAGE on public,
 SELECT on product, client, customer_order, order_item, order_roast_allocation,
-order_creation_request and order_booking_rollout, and INSERT on customer_order,
+order_creation_request, and INSERT on customer_order,
 order_item, order_roast_allocation, order_creation_request and order_audit_event.
 Grant EXECUTE on `public.lock_order_creation_sources(uuid[],uuid)` to the runtime
 login. This SECURITY DEFINER helper takes product/client row locks with its trusted
 owner's permissions, uses a pinned search path and is not executable by PUBLIC.
 The runtime needs no role-admin or Auth-admin grants and no UPDATE/DELETE/TRUNCATE
 grants. Test creation under these restricted grants, not only as a database owner.
-Use a separate trusted migration/setup identity with permission to update the
-rollout row. Keep that identity out of the deployed callable. Verify effective
+Use a separate trusted migration identity for schema and SQL maintenance.
+Keep that identity out of the deployed callable. Verify effective
 privileges, including inherited/public grants, rather than only adding grants.
 
 `ORDERS_LOCAL_DATABASE_URL` is only for demo-mtl emulators and a loopback database;
@@ -131,26 +132,21 @@ local variable. Local tests isolate Functions dotenv settings from developer fil
    Do not apply a generated hardened-order SQL diff blindly.
 2. Apply the additive GraphQL schema, then the repeatable
    `migrations/order-roast-booking.sql` migration. It creates the additional
-   protections and inserts a disabled rollout row; it does not enable booking.
+   protections. Reapply it on existing environments to remove old flag-dependent
+   guards. It does not read or seed an activation flag.
 3. Set up the dedicated IAM/database identities and ORDERS parameters. Regenerate
    the Swift SDK, copy it into iOS, run its preparation script and regenerate Tuist.
 4. Deploy connector additions and only `functions:server:createStaffOrder` to an
    explicitly selected project. Review the full export inventory before any
    codebase-wide deployment; preserve existing Staff exports.
-5. With a trusted setup identity, run
-   `node functions/lib/orders/setup.js --project <explicit-project>` after building
-   Functions. It locks orders/items, checks for unmanaged active lechon orders and
-   enables booking only when none exist. If the check fails, stop and agree a
-   separate backfill; do not bypass it.
-6. Release/verify the iOS integration only after backend readiness. Cloud smoke
-   checks and test-order creation require a separate explicit request. Do not
-   change live roles for validation.
+5. Release/verify the iOS integration after backend deployment. No activation
+   script, flag update or fresh-environment check is required. Cloud smoke checks
+   and test-order creation require a separate explicit request. Do not change
+   live roles for validation.
 
-For an operational pause, disable the rollout row using the trusted operator
-identity. Reads and existing history remain available. Do not remove allocation
-history, reset managed flags, disable integrity triggers or reuse request UUIDs.
-A disabled gate still permits an exact retry to reconcile an already-created
-order; it prevents new creation.
+The obsolete activation table has already been removed from dev. Fresh
+environments do not create it. Preserve allocation history, managed flags and
+integrity triggers; do not apply generated native-constraint changes.
 
 ## Local checks
 
@@ -160,7 +156,8 @@ SQL Connect emulators with disposable native PostgreSQL, never cloud endpoints.
 Tests cover real callable HTTP auth, transactions and rollback, duplicate/lost
 response retries, changed-payload and actor conflicts, catalog changes, exact
 search, product snapshots, cancellation/reopening capacity, simultaneous last-place
-competition, overflow/deposit validation and the fresh-environment rollout gate.
+competition and overflow/deposit validation. Creation runs against a schema
+without an activation table, including under restricted runtime grants.
 The existing product/client/order/client-history and Staff suites run alongside it.
 
 
@@ -186,5 +183,25 @@ release, all four Functions are ACTIVE with the expected identities and limits,
 all five native CHECKs, six RESTRICT foreign keys, three immutable-data triggers
 and four booking guards are present, and the lock helper has its pinned search
 path. There were zero orders before and after deployment; no cloud fixtures were
-created. Booking remains disabled. Enabling it and integrating/releasing the iOS
-client are separate rollout steps.
+created. At that release, booking was still disabled by the former activation
+gate. That historical release does not include the subsequent source change
+removing the gate; deploy that update and reapply the booking migration. No
+activation script is needed with the updated code.
+
+
+## Activation removal deployed to dev 2026-11-09
+
+Passed seven unit tests, 70 emulator/integration tests and the standalone SQL
+Connect schema validation. Deployed only `functions:server:createStaffOrder` and
+registered the updated schema with COMPATIBLE validation. Preserved all twelve
+native constraint definitions and seven audit/identity/booking trigger definitions
+through the established write-pause maintenance procedure.
+
+Reapplied `migrations/order-roast-booking.sql` and deleted the obsolete activation
+table in one transaction. The completed one-time cleanup script was then removed.
+Verified the
+obsolete table is absent, no database function references it, the deployed schema
+matches local source and no maintenance guards remain. All four Functions are
+ACTIVE with their expected identities, one instance and concurrency two. Orders,
+items, allocations and creation requests remained at zero; no cloud fixtures
+were created.

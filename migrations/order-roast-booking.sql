@@ -19,7 +19,6 @@ DECLARE day date; used integer;
 BEGIN
   IF NOT OLD.booking_managed AND NEW.status IN ('CONFIRMED','PAID')
      AND NEW.status IS DISTINCT FROM OLD.status
-     AND EXISTS(SELECT 1 FROM order_booking_rollout WHERE enabled)
      AND EXISTS(SELECT 1 FROM order_item i JOIN product p ON p.id=i.product_id
        WHERE i.order_id=OLD.id AND COALESCE(i.is_lechon_snapshot,p.is_lechon)) THEN
     RAISE EXCEPTION 'ALLOCATION_AWARE_REOPEN_REQUIRED' USING ERRCODE='23514';
@@ -64,11 +63,10 @@ BEGIN
 END $$;
 DROP TRIGGER IF EXISTS managed_item_totals_guard ON customer_order;
 CREATE TRIGGER managed_item_totals_guard BEFORE UPDATE ON customer_order FOR EACH ROW EXECUTE FUNCTION protect_managed_item_totals();
--- Once enabled, older one-item creation must not create unallocated lechon orders.
+-- Older one-item creation must not create unallocated lechon orders.
 CREATE OR REPLACE FUNCTION reject_unallocated_lechon() RETURNS trigger LANGUAGE plpgsql AS $$
 BEGIN
-  IF EXISTS(SELECT 1 FROM order_booking_rollout WHERE enabled) AND
-     EXISTS(SELECT 1 FROM customer_order o JOIN product p ON p.id=NEW.product_id
+  IF EXISTS(SELECT 1 FROM customer_order o JOIN product p ON p.id=NEW.product_id
        WHERE o.id=NEW.order_id AND NOT o.booking_managed AND o.status IN ('CONFIRMED','PAID') AND p.is_lechon) THEN
     RAISE EXCEPTION 'ALLOCATION_AWARE_CREATE_REQUIRED' USING ERRCODE='23514';
   END IF;
@@ -76,5 +74,4 @@ BEGIN
 END $$;
 DROP TRIGGER IF EXISTS legacy_lechon_creation_guard ON order_item;
 CREATE TRIGGER legacy_lechon_creation_guard BEFORE INSERT ON order_item FOR EACH ROW EXECUTE FUNCTION reject_unallocated_lechon();
-INSERT INTO order_booking_rollout(id,enabled) VALUES(true,false) ON CONFLICT(id) DO NOTHING;
 COMMIT;

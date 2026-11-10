@@ -12,10 +12,6 @@ type OrderCreationRequest @table {
   actorUid: String!
   payloadHash: String!
 }
-type OrderBookingRollout @table {
-  id: Boolean!
-  enabled: Boolean! @default(value: false)
-}
 type RoastAvailability @view(sql: """
   SELECT a.pickup_day, a.block_minute, sum(a.pigs)::bigint AS booked
   FROM order_roast_allocation a JOIN customer_order o ON o.id=a.order_id

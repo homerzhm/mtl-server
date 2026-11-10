@@ -26,8 +26,6 @@ export class OrderCreationService {
         if(prior.rows[0].actor_uid!==actor.uid||prior.rows[0].payload_hash!==hash) throw new HttpsError('already-exists','REQUEST_CONFLICT');
         await db.query('COMMIT');return {id:input.id};
       }
-      const rollout=await db.query('SELECT enabled FROM order_booking_rollout WHERE id=true');
-      if(!rollout.rows[0]?.enabled) throw new HttpsError('failed-precondition','BOOKING_NOT_ENABLED');
       const pickup=validateTiming(input,this.now());
       await db.query("SELECT pg_advisory_xact_lock(hashtextextended($1,0))",['roast:'+pickup.day]);
       // The narrowly granted helper takes row locks without granting table UPDATE.
