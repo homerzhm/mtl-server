@@ -24,13 +24,13 @@ async function createPool(): Promise<Pool> {
         [...url.searchParams].some(([key, value]) => key !== 'sslmode' || value !== 'disable')) {
       throw new Error('Local database requires demo-mtl, Auth emulator and a loopback host');
     }
-    return new Pool({connectionString: url.toString(), max: 5, connectionTimeoutMillis: 10000});
+    return new Pool({connectionString: url.toString(), max: 2, connectionTimeoutMillis: 10000});
   }
   if (process.env.FUNCTIONS_EMULATOR || process.env.FIREBASE_AUTH_EMULATOR_HOST || project?.startsWith('demo-')) {
     throw new Error('Emulator runs require STAFF_LOCAL_DATABASE_URL; cloud SQL is forbidden');
   }
   const options = await connector.getOptions({instanceConnectionName: instance.value(), authType: AuthTypes.IAM});
-  return new Pool({...options, user: user.value(), database: database.value(), max: 5, connectionTimeoutMillis: 10000});
+  return new Pool({...options, user: user.value(), database: database.value(), max: 2, connectionTimeoutMillis: 10000});
 }
 
 export async function closeDatabase(): Promise<void> {

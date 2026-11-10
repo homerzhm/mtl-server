@@ -360,3 +360,19 @@ orders before and after registration; no fixtures were written to cloud. The
 signed native app successfully read the empty live directory with its approved
 Firebase session. In future releases, an already-registered view's connector
 changes can deploy alone; new schema types need this reviewed registration step.
+
+## Native live Orders and roast booking
+
+The additive native integration deployed to dev is documented in
+[Live order booking](docs/live-order-booking.md): atomic multi-item creation,
+idempotent retries, real capacity enforcement, read summaries and a gated rollout.
+It adds the `createStaffOrder` callable without changing existing flat Staff
+exports. Apply the reviewed additive schema and booking integrity migration before
+its trusted fresh-environment activation. No cloud deployment is implied by code.
+
+
+Dev deployment was verified on 2026-11-09 with 77 passing local tests. Schema,
+connector and callable are deployed; native integrity protections are preserved.
+The four server Functions share an eight-connection worst-case pool budget.
+Booking activation remains disabled; see the detailed release record and separate
+activation procedure in [Live order booking](docs/live-order-booking.md).

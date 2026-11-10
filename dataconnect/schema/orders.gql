@@ -13,6 +13,7 @@ type Order @table(name: "customer_order", key: ["id"])
   fulfillmentType: String! @default(value: "PICKUP")
   # CONFIRMED, PAID (manual staff confirmation), COMPLETED, CANCELLED.
   status: String! @default(value: "CONFIRMED")
+  bookingManaged: Boolean! @default(value: false)
   scheduledFor: Timestamp
   notes: String
   subtotalCents: Int!
@@ -36,6 +37,7 @@ type OrderItem @table(key: ["id"]) @index(fields: ["orderId", "createdAt", "id"]
   product: Product!
   productId: UUID! @index
   productName: String!
+  isLechonSnapshot: Boolean
   catalogUnitPriceCents: Int!
   unitPriceCents: Int!
   quantity: Int!

@@ -1,0 +1,15 @@
+query ListStaffOrderSummaries($offset: Int! = 0) @auth(expr: "auth.uid != '' && auth.token.firebase.sign_in_provider == 'google.com' && ((has(auth.token.staff) && auth.token.staff == true) || (has(auth.token.admin) && auth.token.admin == true))") {
+  staffOrderSummaries(limit: 100, offset: $offset, orderBy: [{createdAt: DESC}, {id: DESC}]) {id orderNumber status scheduledFor contactPhoneNumber clientId createdAt balanceCents netPaidCents isEstimate description pigCount}
+}
+query FindStaffOrderByNumber($number: String!, $offset: Int! = 0) @auth(expr: "auth.uid != '' && auth.token.firebase.sign_in_provider == 'google.com' && ((has(auth.token.staff) && auth.token.staff == true) || (has(auth.token.admin) && auth.token.admin == true))") {
+  staffOrderSummaries(where: {orderNumber: {eq: $number}}, limit: 100, offset: $offset, orderBy: [{createdAt: DESC}, {id: DESC}]) {id orderNumber status scheduledFor contactPhoneNumber clientId createdAt balanceCents netPaidCents isEstimate description pigCount}
+}
+query FindStaffOrdersByPhone($phone: String!, $offset: Int! = 0) @auth(expr: "auth.uid != '' && auth.token.firebase.sign_in_provider == 'google.com' && ((has(auth.token.staff) && auth.token.staff == true) || (has(auth.token.admin) && auth.token.admin == true))") {
+  staffOrderSummaries(where: {contactPhoneNumber: {eq: $phone}}, limit: 100, offset: $offset, orderBy: [{createdAt: DESC}, {id: DESC}]) {id orderNumber status scheduledFor contactPhoneNumber clientId createdAt balanceCents netPaidCents isEstimate description pigCount}
+}
+query ListRoastAvailability($start: Date!, $end: Date!, $offset: Int! = 0) @auth(expr: "auth.uid != '' && auth.token.firebase.sign_in_provider == 'google.com' && ((has(auth.token.staff) && auth.token.staff == true) || (has(auth.token.admin) && auth.token.admin == true))") {
+  roastAvailabilities(where: {pickupDay: {ge: $start, lt: $end}}, limit: 100, offset: $offset, orderBy: [{pickupDay: ASC}, {blockMinute: ASC}]) {pickupDay blockMinute booked}
+}
+query ListOrderRoastAllocations($id: UUID!, $offset: Int! = 0) @auth(expr: "auth.uid != '' && auth.token.firebase.sign_in_provider == 'google.com' && ((has(auth.token.staff) && auth.token.staff == true) || (has(auth.token.admin) && auth.token.admin == true))") {
+  orderRoastAllocations(where: {orderId: {eq: $id}}, limit: 100, offset: $offset, orderBy: [{blockMinute: ASC}]) {id pickupDay blockMinute pigs}
+}

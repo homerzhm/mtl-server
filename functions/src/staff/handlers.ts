@@ -8,7 +8,7 @@ import {getPool} from './database';
 import {requireGoogle, StaffService, type Caller} from './service';
 
 const runtimeServiceAccount = defineString('STAFF_RUNTIME_SERVICE_ACCOUNT');
-const options = {region: 'northamerica-northeast1', timeoutSeconds: 120, maxInstances: 5,
+const options = {region: 'northamerica-northeast1', timeoutSeconds: 120, maxInstances: 1, concurrency: 2,
   serviceAccount: runtimeServiceAccount};
 
 async function service() { return new StaffService(await getPool(), getAuth(getAdminApp())); }

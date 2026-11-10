@@ -82,7 +82,9 @@ This directory maintains Firebase SQL Connect (`restaurant`), backed by Cloud SQ
 - Configure region, identity, timeouts, instance/concurrency limits and schedules
   per topic or trigger. Do not use `setGlobalOptions` for topic-specific settings.
   Bound database pools and instance counts together against the Cloud SQL connection
-  budget; each function scales separately even within one codebase. Staff's role
+  budget; each function scales separately even within one codebase. Dev has 25
+  connections (three reserved): all four current triggers use maxInstances 1,
+  concurrency 2 and pool max 2, totaling at most eight pooled connections. Staff's role
   control lock is specific to role changes, not a lock for unrelated topics.
 - Authorize callable requests before initializing external dependencies. Enforce
   permissions on the server, validate inputs, preserve known `HttpsError`s, and
@@ -141,3 +143,31 @@ This directory maintains Firebase SQL Connect (`restaurant`), backed by Cloud SQ
   their connector additions. Preserve all native constraints and audit triggers;
   the generated hardened-order SQL diff must not be applied directly. Run
   `tests/client-history.test.mjs` with the other connector tests.
+
+## Native order booking integration
+
+- Follow `docs/live-order-booking.md`. `createStaffOrder` is the sole atomic native
+  multi-item creation path, under the existing Google staff-or-admin policy.
+- Keep order/item UUIDs stable across uncertain retries. Match actor and canonical
+  payload hash before returning an existing result. Never chain one-item writes.
+- Preserve server catalog snapshots and revisions, exact CAD cents, automatic
+  audit and all-or-nothing item/allocation/request persistence.
+- Hard-coded roast constants mirror iOS: America/Toronto, daily 11:00/13:00/15:30/
+  18:00, capacity 18. One lechon quantity uses one place. All blocks and pickup
+  must be future; pickup is a 15-minute time at/after the last allocated block.
+- Serialize capacity changes with the shared per-date advisory lock. Cancellation
+  releases occupancy, completion retains it, and reopening checks capacity. Block
+  unmanaged lechon reopening after activation until a separate backfill. Keep
+  SQL guards blocking legacy item/schedule edits of managed orders and legacy
+  unallocated lechon creation after activation.
+- Availability/summary types are query-backed reads, not physical SQL views.
+  Number and phone searches use separate exact operations; avoid nullable equality
+  filters for unfiltered browsing. Page every read at 100 with stable ordering.
+- Grant only EXECUTE on the pinned-search-path source-lock helper; do not grant
+  the Orders runtime product/client UPDATE just to take row locks. Test its actual
+  restricted database permissions.
+- `ORDERS_*` configuration and a dedicated least-privilege runtime identity are
+  separate from Staff roles. Keep trusted rollout setup out of trigger exports.
+- New schema/migration leaves booking disabled. Enable only through explicit
+  trusted setup after checking for unmanaged active lechon orders; a failed check
+  requires a separate backfill decision. No cloud deployment is implied by edits.
