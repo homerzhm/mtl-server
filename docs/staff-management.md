@@ -9,8 +9,8 @@ The root `index.ts` exports the existing trigger names unchanged. Each future
 topic gets its own folder and runtime settings; shared infrastructure lives in
 `functions/src/shared/`. Staff's database pool and role-control lock are scoped to
 staff operations. Each Staff trigger uses maxInstances 1, concurrency 2 and a
-two-connection pool. Together with Orders, all four triggers reserve at most eight
-pooled connections against dev's 25-connection limit (three reserved). Review the
+two-connection pool. Together with the four Orders triggers, all seven triggers
+reserve at most fourteen pooled connections against dev's 25-connection limit (three reserved). Review the
 combined budget before scaling. Follow the Functions conventions in `AGENTS.md`
 when adding topics.
 

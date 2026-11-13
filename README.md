@@ -14,7 +14,9 @@ Admin SDK environment; the iOS app cannot grant them.
 Products use UUID identity and integer CAD cents (0 through 2147483647). Names
 must be nonblank and trimmed; Chinese names are optional, trimmed, and nonblank
 when present. Duplicate names and zero prices are allowed. `isActive` controls
-availability for new orders. There is no delete operation or order usage count.
+availability for new orders. Optional `capacityGroupId` links a product to its booking
+capacity pool; null clears the assignment. Assignments cannot target archived groups.
+There is no delete operation or order usage count.
 Updates preserve `description` and `createdAt` and atomically match the expected
 revision before incrementing it. An unmatched revision produces PRODUCT_CONFLICT.
 Validation failures produce PRODUCT_VALIDATION and roll back the transaction.
@@ -361,6 +363,22 @@ orders before and after registration; no fixtures were written to cloud. The
 signed native app successfully read the empty live directory with its approved
 Firebase session. In future releases, an already-registered view's connector
 changes can deploy alone; new schema types need this reviewed registration step.
+
+## Configurable booking capacity groups (deployed to dev)
+
+Products now optionally reference a capacity group instead of `isLechon`. A
+singleton `BookingSettings` row stores shared daily block minutes, initially
+11:00/13:00/15:30/18:00 Toronto time. Groups and capacities are created explicitly
+through `manageBookingConfiguration`; no default groups or limits are seeded.
+Admin edits apply immediately and reject reservation conflicts.
+
+See [Live order booking](docs/live-order-booking.md) for the revised creation
+contract, `manageBookingConfiguration`, `getBookingAvailability`, connector reads,
+SQL guards, schedule initialization, runtime grants and local checks. Existing flat trigger names
+remain; the two additions bring the pool budget to fourteen across seven triggers.
+The group refactor breaks the unreleased lechon-specific connector/callable contract.
+There is no old-app compatibility layer. Deployed to dev on 2026-11-12; existing
+orders and allocations were preserved without a reset. See the release record below.
 
 ## Native live Orders and roast booking
 

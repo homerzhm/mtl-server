@@ -35,7 +35,7 @@ async function denied(name,vars,claims=staff,match) {
 }
 async function product(priceCents=1000) {
   const id = uuid();
-  await ok('CreateProduct',{id,name:'Order test product',chineseName:'測試',priceCents,isActive:true,isLechon:false},catalogAdmin);
+  await ok('CreateProduct',{id,name:'Order test product',chineseName:'測試',priceCents,isActive:true,capacityGroupId:null},catalogAdmin);
   return id;
 }
 async function create(extra={},claims=staff) {
@@ -131,7 +131,7 @@ test('item changes preserve snapshots and manual checkout total; last item canno
   assert.equal(current.finalTotalCents,2500);
   const lines=(await ok('ListOrderItems',{id:value.id})).orderItems;
   assert.equal(lines.find(i=>i.id===value.itemId).catalogUnitPriceCents,1000);
-  await ok('UpdateProduct',{id:value.productId,name:'New catalog name',priceCents:9999,isLechon:true,isActive:false,expectedRevision:0},catalogAdmin);
+  await ok('UpdateProduct',{id:value.productId,name:'New catalog name',priceCents:9999,capacityGroupId:null,isActive:false,expectedRevision:0},catalogAdmin);
   assert.equal((await ok('ListOrderItems',{id:value.id})).orderItems[0].productName,'Order test product');
   await denied('AddOrderItem',{id:value.id,expectedRevision:3,itemId:uuid(),productId:value.productId,quantity:1});
   await ok('RemoveOrderItem',{id:value.id,expectedRevision:3,itemId:second});

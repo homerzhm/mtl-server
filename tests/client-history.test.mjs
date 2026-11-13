@@ -32,7 +32,7 @@ async function client(phoneNumber=null) {
 }
 async function product() {
   const id=uuid();
-  await ok('CreateProduct',{id,name:'History test',priceCents:2000,isActive:true,isLechon:false},admin);
+  await ok('CreateProduct',{id,name:'History test',priceCents:2000,isActive:true,capacityGroupId:null},admin);
   return id;
 }
 async function order(productId,extra={}) {

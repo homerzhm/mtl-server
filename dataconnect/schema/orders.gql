@@ -37,7 +37,9 @@ type OrderItem @table(key: ["id"]) @index(fields: ["orderId", "createdAt", "id"]
   product: Product!
   productId: UUID! @index
   productName: String!
-  isLechonSnapshot: Boolean
+  capacityGroup: CapacityGroup
+  capacityGroupId: UUID @index
+  capacityGroupNameSnapshot: String
   catalogUnitPriceCents: Int!
   unitPriceCents: Int!
   quantity: Int!

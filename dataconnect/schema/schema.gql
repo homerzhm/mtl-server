@@ -7,8 +7,8 @@ type Product @table(name: "product", key: ["id"]) {
   # Fixed selling price in Canadian cents.
   priceCents: Int!
   isActive: Boolean! @default(value: true)
-  # Whether this product is lechon.
-  isLechon: Boolean! @default(value: false)
+  capacityGroup: CapacityGroup
+  capacityGroupId: UUID @index
   createdAt: Timestamp! @default(expr: "request.time")
 }
 

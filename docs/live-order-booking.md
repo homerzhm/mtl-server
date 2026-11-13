@@ -1,171 +1,237 @@
-# Native live order creation and roast booking
+# Native order creation and configurable capacity groups
 
-The creation flow and activation-gate removal are deployed to dev (`mtl-service-e3e0c`).
-The native payment/status additions below are also deployed to dev. There is no booking setup or enable step.
-The iOS Orders tab requires these changes before creation can be used. Existing
-order editing, receipt and lifecycle APIs remain separate from this creation flow.
+The capacity-group refactor was deployed to dev (`mtl-service-e3e0c`) on 2026-11-12.
+Earlier release records below describe the previous lechon-specific implementation.
+The app is unreleased; no old-app compatibility layer is included. Existing dev
+bookings were preserved during release as documented below.
 
-## Callable contract
+## Storage and daily rules
 
-`createStaffOrder` is a flat Firebase callable export in `northamerica-northeast1`.
-It requires Google authentication and strict Boolean `staff:true` OR `admin:true`.
-Authorization runs before database construction. Runtime limits are 60 seconds,
-one instance, two concurrent requests and two database connections per instance.
-Each of the three Staff functions uses the same instance/concurrency/pool limits.
-With the new `updateStaffOrder` callable, the five triggers have a combined
-worst-case pool budget of ten connections; dev allows 25 total,
-with three reserved for superusers. Leave the remaining capacity for SQL Connect,
-maintenance and other clients. Review the combined budget before raising limits.
+`BookingSettings` has exactly one row, ID `default`, with an integer `blockMinutes`
+array, revision, updatedAt and updatedBy. Blocks repeat every day in America/Toronto.
+There are no date rows, scheduled versions or holiday overrides. Values are unique
+15-minute offsets from midnight, 0–1439, with a nonempty schedule of at most 96 blocks.
 
-Input fields are required, using explicit null for optional contact/client/notes:
+`CapacityGroup` has stable UUID/code, editable name, positive Int32 capacityPerBlock,
+archived, revision, createdAt, updatedAt and updatedBy. Groups have independent pools;
+one block can hold 18 lechon AND 4 belly. Every product optionally references one
+capacityGroupId. Each ordered quantity consumes one place, regardless of size.
+Null means no capacity requirement. Assignment changes increment product revision.
+CreateProduct and UpdateProduct accept capacityGroupId instead of isLechon; optional
+fields are full replacements, so null/omission clears the link. Existing product
+read/write authorization, cents, descriptions and timestamp preservation remain.
+
+`OrderItem` snapshots capacityGroupId and capacityGroupNameSnapshot. Reassignment
+or renaming never moves an existing booking or rewrites its display snapshot.
+`OrderCapacityAllocation` stores orderId, pickupDay, groupId, blockMinute and quantity,
+unique per order/group/block. Quantities and group capacities are positive Int32;
+aggregate counts remain Int64. Allocations are immutable history.
+
+## Creation contract
+
+`createStaffOrder` remains a flat callable in northamerica-northeast1, requiring
+Google sign-in and Boolean Staff OR Admin. Authorize before constructing dependencies.
+All fields below are required; optional form values use explicit null:
 
 ```typescript
 {
-  id: string; // stable UUID, also the idempotency key
-  items: Array<{
-    id: string; // stable item UUID
-    productId: string;
-    expectedRevision: number;
-    quantity: number; // 1–99
-  }>;
+  id: string; // stable request/order UUID
+  items: Array<{id: string; productId: string; expectedRevision: number; quantity: number}>;
   clientId: string | null;
   contactPhoneNumber: string | null;
-  scheduledFor: string; // UTC ISO timestamp, seconds zero, 15-minute local time
-  allocations: Array<{minute: number; pigs: number}>;
+  scheduledFor: string; // UTC ISO, zero seconds, quarter-hour Toronto time
+  expectedSettingsRevision: number;
+  expectedGroups: Array<{id: string; expectedRevision: number}>;
+  allocations: Array<{groupId: string; blockMinute: number; quantity: number}>;
   depositRequiredCents: number;
   notes: string | null;
 }
 ```
 
-At most 100 distinct products, one line per product. The UI copies a linked
-client's phone before submission; the callable preserves the explicit snapshot,
-including null, rather than silently substituting changed profile data. Phone
-input accepts ten unformatted NANP digits or canonical international `+` form;
-iOS normalizes formatted input with MTLCore. Notes are limited to 10,000 characters.
-Amounts and multiplication must fit nonnegative signed 32-bit CAD cents. Requested
-deposit is from zero through subtotal. No payment, discount or final total is
-created; the initial lifecycle is CONFIRMED and balance is an estimate.
+At most 100 distinct products, quantity 1–99 each. The expected group list must
+exactly match the server-resolved groups. Allocations may split each group across
+blocks on the pickup day; totals must exactly equal that group's ordered quantity.
+Ungrouped items need no allocations. All blocks must exist in saved settings.
+Pickup must be future, on a 15-minute boundary, at/after the latest allocated block
+across all groups. Every block must still be future at commit. There is no advance
+horizon or staff override. Contact normalization, Int32 CAD cents, deposit bounds,
+CONFIRMED creation, product/client source locking and collision retries remain.
 
-The response is `{id: string}`. Fetch the detail through SQL Connect after success.
-Creation saves every item, product name/price/lechon snapshot, allocations,
-idempotency record and automatic audit event in one PostgreSQL transaction.
-Server-side catalog reads lock selected products and reject inactive/missing or
-revision-changed products. Order-number generation retries unique collisions.
+Response: `{id}`. Items, snapshots, allocations, request and audit save atomically.
+Canonical hashing sorts item IDs, expected group IDs, and group/block allocations.
+UUIDs are lowercase. Keep request/item UUIDs and the exact payload across uncertain
+retries. Matching committed requests reconcile before checking current time,
+catalog or configuration; changed actor/payload returns REQUEST_CONFLICT.
 
-The request hash uses validated canonical input, sorted item IDs and block minutes.
-The actor UID comes from trusted callable auth. A matching retry returns its
-original order before revalidating now-expired timing or a changed catalog.
-Reusing the UUID with different content or another actor returns REQUEST_CONFLICT,
-without exposing the existing record. An uncertain response must be retried with
-the exact payload and IDs; do not start a replacement request automatically.
+Known failures include CATALOG_CHANGED, BOOKING_CONFIGURATION_CHANGED,
+GROUP_CAPACITY, PICKUP_EXPIRED, CLIENT_UNAVAILABLE and REQUEST_CONFLICT.
+Unexpected errors are logged and sanitized as uncertain outcomes. Never automatically
+replace an uncertain request identity or auto-replay cash payments.
 
-Expected failures include CATALOG_CHANGED, ROAST_CAPACITY, PICKUP_EXPIRED,
-CLIENT_UNAVAILABLE and REQUEST_CONFLICT. Unexpected errors
-are logged server-side and sanitized as an uncertain result. iOS freezes that
-pending payload until reconciliation, while known rejected writes retain an
-editable draft.
+## Configuration and availability APIs
 
-## Fixed booking rules and integrity
+`manageBookingConfiguration` requires Google Staff AND Admin and accepts one of:
 
-App and server constants match: America/Toronto, every day at minute offsets
-660, 780, 930 and 1080 (11:00, 13:00, 15:30 and 18:00), capacity 18 pigs per block.
-One lechon quantity uses one place regardless of size. Splits are allowed within
-the pickup day and must exactly equal the pig quantity. Pickup cannot precede the
-last allocated block. Both pickup and allocated block starts must still be future
-at commit; there is no advance-booking horizon or staff override. Add-on-only
-orders have no allocations and may book on full roast days.
-
-Creation acquires transaction-scoped advisory locks keyed by `roast:YYYY-MM-DD`.
-SQL triggers acquire those same locks for cancellation and reopening; reopening
-checks the resulting occupancy. Completed orders retain their places. Cancelled
-orders retain allocation history but no longer consume capacity. Existing order
-item/schedule mutations reject booking-managed orders, including add-on-only ones.
-The old one-item creation path cannot create unallocated active
-lechon orders. Reopening cancelled/completed unmanaged lechon orders is also
-blocked unless allocations have been handled through an allocation-aware workflow. Legacy
-orders remain readable.
-
-The schema adds a nullable item lechon snapshot, booking-managed flag, allocation
-and request tables. Unknown legacy lechon counts remain null. No activation
-table or runtime activation permission is required.
-`StaffOrderSummary` and `RoastAvailability` are SQL Connect query-backed types,
-not physical PostgreSQL views. Summaries aggregate items and financial data without
-per-order downloads and without multiplying payment/refund joins. Number and phone
-search use separate exact-filter operations; nullable equality filters must not be
-used to represent unfiltered browsing. All reads require the existing Google
-staff-or-admin policy and paginate at 100 using stable ordering and raw offsets.
-
-## Configuration and IAM
-
-Use a dedicated runtime service account and PostgreSQL IAM login, separate from
-Staff role administration. Configure the topic parameters in deployment dotenv:
-
-```text
-ORDERS_SQL_INSTANCE=<project:region:instance>
-ORDERS_SQL_DATABASE=restaurant
-ORDERS_SQL_USER=<dedicated PostgreSQL IAM login>
-ORDERS_RUNTIME_SERVICE_ACCOUNT=<dedicated service account email>
+```typescript
+{action: 'UPDATE_SETTINGS', expectedRevision: number, blockMinutes: number[]}
+{action: 'CREATE_GROUP', id: string, code: string, name: string, capacityPerBlock: number}
+{action: 'UPDATE_GROUP', id: string, expectedRevision: number,
+ name: string, capacityPerBlock: number, archived: boolean}
 ```
 
-Enable Cloud SQL IAM authentication and grant Cloud SQL Client and Cloud SQL
-Instance User to that identity. Give it CONNECT to the database, USAGE on public,
-SELECT on product, client, customer_order, order_item, order_roast_allocation,
-order_creation_request, order_action_request, payment, refund, and INSERT on customer_order,
-order_item, order_roast_allocation, order_creation_request, order_action_request,
-payment and order_audit_event. Grant only column UPDATE on customer_order
-(revision, status, final_total_cents, completed_at, updated_at) for native actions.
-Grant EXECUTE on `public.lock_order_creation_sources(uuid[],uuid)` to the runtime
-login. This SECURITY DEFINER helper takes product/client row locks with its trusted
-owner's permissions, uses a pinned search path and is not executable by PUBLIC.
-The runtime needs no role-admin or Auth-admin grants, no UPDATE on product/client,
-and no DELETE/TRUNCATE grants. Test creation and actions under the documented
-restricted grants, not only as a database owner.
-Use a separate trusted migration identity for schema and SQL maintenance.
-Keep that identity out of the deployed callable. Verify effective
-privileges, including inherited/public grants, rather than only adding grants.
+Codes are immutable uppercase identifiers (letters, digits, underscores; start
+with a letter, max 64). Names are nonblank, trimmed, max 200 characters. New IDs
+are caller-generated UUIDs. Responses contain the saved settings/group with its
+revision and ISO timestamps. Creation is not a booking-idempotency API: after an
+uncertain configuration save, reload before retrying. Duplicate IDs/codes return
+GROUP_EXISTS; stale revisions return BOOKING_CONFIGURATION_CONFLICT.
 
-`ORDERS_LOCAL_DATABASE_URL` is only for demo-mtl emulators and a loopback database;
-it fails closed for cloud projects, missing Auth emulator configuration, remote
-hosts, alternate SSL modes or extra connection parameters. Never deploy this
-local variable. Local tests isolate Functions dotenv settings from developer files.
+Changes apply immediately. Reject removing blocks used by non-cancelled orders
+on dates today or later, or reducing limits below such reservations. Archival
+requires zero linked products, even inactive ones. It prevents new assignments
+while preserving allocations and capacity-checked reopening. Group deletion is
+forbidden; the singleton cannot be deleted. No connector writes expose config.
 
-## Reviewed rollout sequence — explicit deployment required
+`getBookingAvailability({day: 'YYYY-MM-DD', offset?: number})` requires Google
+Staff OR Admin. Returns day, timeZone, settings `{blockMinutes, revision}`, up to
+100 blocks and nextOffset (null at end). Each block contains groupId, groupCode,
+groupName, archived, groupRevision, blockMinute, capacity, booked and remaining.
+Counts/remaining are decimal strings to preserve Int64 values. Includes every
+configured group/block, including archived groups and zero bookings. Order is
+UUID then block minute. One repeatable-read snapshot covers settings/revisions/counts
+within each page; changes between pages require refreshing before booking.
 
-1. Review the compatible additive schema diff. Preserve all native integrity
-   constraints, immutable audit/identity triggers and RESTRICT relationships.
-   Do not apply a generated hardened-order SQL diff blindly.
-2. Apply the additive GraphQL schema, then the repeatable
-   `migrations/order-roast-booking.sql` migration, followed by
-   `migrations/order-actions.sql` after the additive OrderActionRequest table. It creates the additional
-   protections. Reapply it on existing environments to remove old flag-dependent
-   guards. It does not read or seed an activation flag.
-3. Set up the dedicated IAM/database identities and ORDERS parameters. Regenerate
-   the Swift SDK, copy it into iOS, run its preparation script and regenerate Tuist.
-4. Deploy connector additions and the individual `functions:server:createStaffOrder`
-   and `functions:server:updateStaffOrder` exports to an
-   explicitly selected project. Review the full export inventory before any
-   codebase-wide deployment; preserve existing Staff exports.
-5. Release/verify the iOS integration after backend deployment. No activation
-   script, flag update or fresh-environment check is required. Cloud smoke checks
-   and test-order creation require a separate explicit request. Do not change
-   live roles for validation.
+Connector reads under the same policy: GetBookingSettings, ListCapacityGroups,
+ListOrderCapacityAllocations and ListOrderCapacitySummaries. Lists page at 100.
+OrderCapacitySummary returns saved per-group quantities/name snapshots, separate
+from StaffOrderSummary's financial totals. StaffOrderSummary also returns
+`groupQuantities`, an array of `{groupId, groupName, quantity}` with decimal-string
+quantities, so order lists need no per-order group downloads. Pig-only summaries
+are removed.
+Signed-in catalog reads retain their existing broader authorization.
 
-The obsolete activation table has already been removed from dev. Fresh
-environments do not create it. Preserve allocation history, managed flags and
-integrity triggers; do not apply generated native-constraint changes.
+## Concurrency, lifecycle and SQL guards
 
-## Local checks
+Capacity writers share a transaction-scoped `booking-capacity` advisory lock.
+Services acquire it before source/parent locks; SQL statement triggers acquire
+it before row locks on settings, groups, products, orders, items and allocations.
+A global lock is intentionally simple for this restaurant's bounded workload.
 
-Use native Node 22. Run `npm --prefix functions test` and
-`npm --prefix functions run test:emulators`. The latter uses Auth, Functions and
-SQL Connect emulators with disposable native PostgreSQL, never cloud endpoints.
-Tests cover real callable HTTP auth, transactions and rollback, duplicate/lost
-response retries, changed-payload and actor conflicts, catalog changes, exact
-search, product snapshots, cancellation/reopening capacity, simultaneous last-place
-competition and overflow/deposit validation. Creation runs against a schema
-without an activation table, including under restricted runtime grants.
-The existing product/client/order/client-history and Staff suites run alongside it.
+Cancellation excludes occupancy without deleting allocations; completion retains
+occupancy. Reopening uses saved groups and current schedule/limits, rejecting
+removed blocks or full groups. Archived groups may reopen valid existing bookings.
+Unmanaged grouped reopening and legacy unallocated grouped creation are blocked.
+Existing managed item/schedule/total edit protections remain. Allocation inserts
+validate the managed parent, date, group, block and capacity; deferred checks
+require exact grouped item/allocation totals at commit. Never bypass guards by
+chaining one-item writes. Group quantities and ledger sums aggregate independently.
 
+## Runtime identity and grants
+
+Reuse ORDERS_SQL_INSTANCE, ORDERS_SQL_DATABASE, ORDERS_SQL_USER and
+ORDERS_RUNTIME_SERVICE_ACCOUNT and the dedicated Orders identity. Each of the four
+Orders triggers uses maxInstances 1, concurrency 2, timeout 60s, pool max 2. With
+three Staff triggers, the combined ceiling is fourteen connections against dev's
+25 (three reserved). Review the combined budget before changing limits.
+
+Grant Cloud SQL Client/Instance User, database CONNECT and schema USAGE. SQL grants:
+
+- SELECT: product, client, customer_order, order_item, order_capacity_allocation,
+  order_creation_request, order_action_request, payment, refund, booking_settings,
+  capacity_group.
+- INSERT: customer_order, order_item, order_capacity_allocation, order_creation_request,
+  order_action_request, payment, order_audit_event, capacity_group.
+- UPDATE customer_order columns: revision, status, final_total_cents, completed_at,
+  updated_at.
+- UPDATE booking_settings columns: block_minutes, revision, updated_at, updated_by.
+- UPDATE capacity_group columns: name, capacity_per_block, archived, revision,
+  updated_at, updated_by.
+- EXECUTE on public.lock_order_creation_sources(uuid[],uuid), the pinned-search-path
+  SECURITY DEFINER helper; PUBLIC execution is revoked. Product/client UPDATE is
+  not needed. No DELETE/TRUNCATE, Staff-table or Auth-admin grants.
+
+Migration identities remain separate from runtime. ORDERS_LOCAL_DATABASE_URL is
+only accepted for demo-mtl with Auth emulator and loopback PostgreSQL, with no
+remote host override. Tests isolate Functions dotenv from developer credentials.
+
+## Local setup, checks and later rollout
+
+Apply the matching GraphQL schema, then migrations/order-integrity.sql,
+order-paid-status.sql, order-capacity-booking.sql and order-actions.sql in order
+on a fresh local database. The capacity migration initializes only the singleton
+schedule with [660,780,930,1080], preserving administrator edits on reruns.
+It creates no capacity groups and supplies no default group limits. Google users
+with both Staff and Admin claims create groups explicitly, for example:
+
+```typescript
+{action: 'CREATE_GROUP', id: '<new UUID>', code: 'MY_GROUP',
+ name: 'My group', capacityPerBlock: 6}
+```
+
+Choose the capacity when creating the group, then link products using its returned
+ID. Membership is never inferred from product names. Test suites create their own
+groups through this admin API. No activation or setup script is required.
+
+Use native Node 22 and a current Firebase CLI:
+
+```sh
+npm --prefix functions ci
+firebase emulators:exec --only dataconnect --project demo-mtl "true"
+npm --prefix functions test
+npm --prefix functions run test:emulators
+```
+
+The last command runs Auth/Functions/SQL Connect, disposable native PostgreSQL,
+and all connector/Staff/Orders suites. Coverage includes independent group limits,
+splits, snapshots, permissions, restricted grants, safe/conflicting edits, stale
+revisions, pagination, races, cancellation/reopening, actions and idempotent retries.
+
+No cloud deployment/reset is implied. This replaces unreleased schema fields and
+connector contracts; schemaValidation remains COMPATIBLE. Any future deployment
+must explicitly review removals of old fields/table/view types and replacement SQL
+guards. Do not blindly apply generated hardened-order diffs or discard native
+constraints/audit triggers. Fresh local setups seed directly; release-specific data preservation is recorded below.
+Regenerate/copy the Swift SDK and update app payloads/schedule reads together.
+Review all seven flat exports before a codebase release; existing export names
+are preserved. Use explicit --project for all cloud commands.
+
+## Capacity groups deployed to dev — 2026-11-12
+
+Passed ten unit tests, 83 isolated emulator/integration tests and standalone schema
+validation before release. Reviewed the dev SQL diff and all five existing flat
+exports before deploying the schema, staff-admin connector and four Orders functions.
+The three Staff functions were preserved; all seven exports are ACTIVE with their
+expected dedicated identities, maxInstances 1 and concurrency 2. Total pool ceiling
+is fourteen against 25 database connections (three reserved).
+
+Dev contained two products, six orders, six items, four roast allocations and six
+creation requests. The release preserved every row: the existing lechon product
+was assigned to LECHON with a revision increment, true item lechon snapshots became
+saved LECHON group snapshots, and allocations were copied with stable IDs and exact
+quantities. There were no inferred belly assignments, new orders, payment/status
+writes or resets. Old physical fields/allocation rows remain as unexposed history;
+the Orders runtime's privileges on the obsolete allocation table were revoked.
+
+SQL Connect required a temporary superset schema to keep the old connector valid
+while deploying its replacement. Registered the final group-only schema afterward.
+Both final schema and connector sources were verified byte-for-byte against local
+files with schemaValidation COMPATIBLE. A temporary write pause covered maintenance
+and was removed only after verification. Generated constraint removals/cascading
+FK replacements were not left applied: restored all eleven original native CHECKs
+and RESTRICT FKs exactly, retained audit/identity immutability, and verified 22 enabled
+booking/action/integrity guards. Existing payment/status protections remain active.
+
+Verified the singleton schedule [660,780,930,1080], LECHON 18, PORK_BELLY 4, exact
+runtime SELECT/INSERT grants and fifteen narrowly scoped UPDATE columns. No product/
+client UPDATE or DELETE/TRUNCATE grants were added. Confirmed zero remaining
+maintenance pauses and HTTP 401 UNAUTHENTICATED from all four Orders endpoints
+for anonymous calls, without creating test orders or changing payments/status.
+iOS must regenerate its SDK and
+adopt the new group allocations, revisions and server-saved schedule before booking.
+
+## Historical releases
+
+The following records describe earlier deployments.
 
 ## Dev deployment verified 2026-11-09
 

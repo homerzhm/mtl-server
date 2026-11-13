@@ -1,9 +1,9 @@
 query ListProducts($offset: Int! = 0) @auth(level: USER) {
-  products(limit: 100, offset: $offset, orderBy: [{createdAt: ASC}, {id: ASC}]) { id name chineseName priceCents isLechon isActive revision createdAt }
+  products(limit: 100, offset: $offset, orderBy: [{createdAt: ASC}, {id: ASC}]) { id name chineseName priceCents capacityGroupId isActive revision createdAt }
 }
 
 query GetProduct($id: UUID!) @auth(level: USER) {
-  product(id: $id) { id name chineseName priceCents isLechon isActive revision createdAt }
+  product(id: $id) { id name chineseName priceCents capacityGroupId isActive revision createdAt }
 }
 
 query ListClients($offset: Int! = 0) @auth(expr: "auth.uid != '' && auth.token.firebase.sign_in_provider == 'google.com' && ((has(auth.token.staff) && auth.token.staff == true) || (has(auth.token.admin) && auth.token.admin == true))") {

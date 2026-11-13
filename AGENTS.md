@@ -20,7 +20,8 @@ This directory maintains Firebase SQL Connect (`restaurant`), backed by Cloud SQ
 
 - Each `Product` row represents one sellable menu item. Store its fixed selling price as integer CAD cents in `priceCents`.
 - Use `isActive` for whether the item is offered on the menu and can be ordered. Sold-out status is managed outside `Product`.
-- Use the required `isLechon` flag to identify lechon products; it defaults to `false`.
+- Products optionally link to one `CapacityGroup`; each ordered quantity consumes one place.
+  Capacity uses that link, not a lechon Boolean. Preserve booked group snapshots.
 
 ## Schema changes and deployment
 
@@ -83,8 +84,8 @@ This directory maintains Firebase SQL Connect (`restaurant`), backed by Cloud SQ
   per topic or trigger. Do not use `setGlobalOptions` for topic-specific settings.
   Bound database pools and instance counts together against the Cloud SQL connection
   budget; each function scales separately even within one codebase. Dev has 25
-  connections (three reserved): all five current triggers use maxInstances 1,
-  concurrency 2 and pool max 2, totaling at most ten pooled connections. Staff's role
+  connections (three reserved): all seven current triggers use maxInstances 1,
+  concurrency 2 and pool max 2, totaling at most fourteen pooled connections. Staff's role
   control lock is specific to role changes, not a lock for unrelated topics.
 - Authorize callable requests before initializing external dependencies. Enforce
   permissions on the server, validate inputs, preserve known `HttpsError`s, and
@@ -152,17 +153,26 @@ This directory maintains Firebase SQL Connect (`restaurant`), backed by Cloud SQ
   payload hash before returning an existing result. Never chain one-item writes.
 - Preserve server catalog snapshots and revisions, exact CAD cents, automatic
   audit and all-or-nothing item/allocation/request persistence.
-- Hard-coded roast constants mirror iOS: America/Toronto, daily 11:00/13:00/15:30/
-  18:00, capacity 18. One lechon quantity uses one place. All blocks and pickup
-  must be future; pickup is a 15-minute time at/after the last allocated block.
-- Serialize capacity changes with the shared per-date advisory lock. Cancellation
-  releases occupancy, completion retains it, and reopening checks capacity. Block
-  unmanaged lechon reopening without an allocation-aware workflow. Keep
-  SQL guards blocking legacy item/schedule edits of managed orders and legacy
-  unallocated lechon creation.
-- Availability/summary types are query-backed reads, not physical SQL views.
-  Number and phone searches use separate exact operations; avoid nullable equality
-  filters for unfiltered browsing. Page every read at 100 with stable ordering.
+- Shared daily blocks live in singleton `BookingSettings`; timezone stays America/Toronto.
+  Bootstrap 11:00/13:00/15:30/18:00 only; do not seed capacity groups or limits.
+  Admins create groups with explicit independent positive Int32 limits through
+  `manageBookingConfiguration`; one product quantity uses one place.
+  All blocks and pickup must be future; pickup is a 15-minute time at/after the
+  latest allocated block across all groups.
+- `manageBookingConfiguration` requires Google Staff AND Admin. Configuration
+  changes apply immediately with revision checks. Reject removal of occupied
+  upcoming blocks and limits below upcoming occupancy; archive only unlinked groups.
+- Serialize capacity writers with the common `booking-capacity` advisory lock,
+  acquired before row locks. SQL statement triggers use the same lock. Cancellation
+  releases occupancy, completion retains it, and reopening checks current blocks
+  and limits using saved group allocations, including archived groups.
+- Keep SQL guards blocking legacy item/schedule edits of managed orders, legacy
+  unallocated grouped creation and unmanaged grouped reopening. Allocations are
+  immutable history; deferred checks require exact item/allocation group totals.
+- Summary types are query-backed reads, not physical SQL views. Availability is
+  the paginated `getBookingAvailability` callable, including empty blocks and
+  configuration revisions. Number and phone searches use separate exact operations.
+  Page every read at 100 with stable ordering. Keep group and ledger sums separate.
 - Grant only EXECUTE on the pinned-search-path source-lock helper; do not grant
   the Orders runtime product/client UPDATE just to take row locks. Test its actual
   restricted database permissions.

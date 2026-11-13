@@ -1,21 +1,21 @@
-mutation CreateProduct($id: UUID!, $name: String!, $chineseName: String, $priceCents: Int!, $isLechon: Boolean!, $isActive: Boolean!) @auth(expr: "auth.uid != '' && auth.token.firebase.sign_in_provider == 'google.com' && auth.token.staff == true && auth.token.admin == true") @transaction {
-  product_insert(data: { id: $id, name: $name, chineseName: $chineseName, priceCents: $priceCents, isLechon: $isLechon, isActive: $isActive })
+mutation CreateProduct($id: UUID!, $name: String!, $chineseName: String, $priceCents: Int!, $capacityGroupId: UUID, $isActive: Boolean!) @auth(expr: "auth.uid != '' && auth.token.firebase.sign_in_provider == 'google.com' && auth.token.staff == true && auth.token.admin == true") @transaction {
+  product_insert(data: { id: $id, name: $name, chineseName: $chineseName, priceCents: $priceCents, capacityGroupId: $capacityGroupId, isActive: $isActive })
   query { product(key: {id_expr: "response.product_insert.id"}) { id
       name @check(expr: "this.matches(r'(?s)^\\S(.*\\S)?$')", message: "PRODUCT_VALIDATION")
       chineseName @check(expr: "this == null || this.matches(r'(?s)^\\S(.*\\S)?$')", message: "PRODUCT_VALIDATION")
       priceCents @check(expr: "this >= 0", message: "PRODUCT_VALIDATION")
-      isLechon isActive revision createdAt } }
+      capacityGroupId isActive revision createdAt } }
 }
 
-mutation UpdateProduct($id: UUID!, $name: String!, $chineseName: String, $priceCents: Int!, $isLechon: Boolean!, $isActive: Boolean!, $expectedRevision: Int!) @auth(expr: "auth.uid != '' && auth.token.firebase.sign_in_provider == 'google.com' && auth.token.staff == true && auth.token.admin == true") @transaction {
+mutation UpdateProduct($id: UUID!, $name: String!, $chineseName: String, $priceCents: Int!, $capacityGroupId: UUID, $isActive: Boolean!, $expectedRevision: Int!) @auth(expr: "auth.uid != '' && auth.token.firebase.sign_in_provider == 'google.com' && auth.token.staff == true && auth.token.admin == true") @transaction {
   product_updateMany(where: {id: {eq: $id}, revision: {eq: $expectedRevision}},
-    data: { name: $name, chineseName: $chineseName, priceCents: $priceCents, isLechon: $isLechon, isActive: $isActive, revision_expr: "vars.expectedRevision + 1" })
+    data: { name: $name, chineseName: $chineseName, priceCents: $priceCents, capacityGroupId: $capacityGroupId, isActive: $isActive, revision_expr: "vars.expectedRevision + 1" })
     @check(expr: "this == 1", message: "PRODUCT_CONFLICT")
   query { product(key: {id_expr: "response.product_updateMany == 1 ? vars.id : vars.id"}) { id
       name @check(expr: "this.matches(r'(?s)^\\S(.*\\S)?$')", message: "PRODUCT_VALIDATION")
       chineseName @check(expr: "this == null || this.matches(r'(?s)^\\S(.*\\S)?$')", message: "PRODUCT_VALIDATION")
       priceCents @check(expr: "this >= 0", message: "PRODUCT_VALIDATION")
-      isLechon isActive revision createdAt } }
+      capacityGroupId isActive revision createdAt } }
 }
 
 mutation CreateClient($id: UUID!, $phoneNumber: String!, $name: String, $email: String) @auth(expr: "auth.uid != '' && auth.token.firebase.sign_in_provider == 'google.com' && ((has(auth.token.staff) && auth.token.staff == true) || (has(auth.token.admin) && auth.token.admin == true))") @transaction {

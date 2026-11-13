@@ -1,0 +1,88 @@
+# Configuration writes are trusted callables; no connector mutations expose these.
+type BookingSettings @table(key: ["id"]) {
+  id: String!
+  blockMinutes: [Int!]!
+  revision: Int! @default(value: 0)
+  updatedAt: Timestamp! @default(expr: "request.time")
+  updatedBy: String!
+}
+type CapacityGroup @table {
+  id: UUID! @default(expr: "uuidV4()")
+  code: String! @unique
+  name: String!
+  capacityPerBlock: Int!
+  archived: Boolean! @default(value: false)
+  revision: Int! @default(value: 0)
+  createdAt: Timestamp! @default(expr: "request.time")
+  updatedAt: Timestamp! @default(expr: "request.time")
+  updatedBy: String!
+}
+type OrderCapacityAllocation @table @unique(fields: ["orderId", "groupId", "blockMinute"])
+  @index(fields: ["pickupDay", "groupId", "blockMinute"]) {
+  id: UUID! @default(expr: "uuidV4()")
+  order: Order!
+  orderId: UUID! @index
+  group: CapacityGroup!
+  groupId: UUID!
+  pickupDay: Date!
+  blockMinute: Int!
+  quantity: Int!
+}
+# Separate from financial summaries so group rows never multiply ledger aggregates.
+type OrderCapacitySummary @view(sql: """
+  SELECT order_id,capacity_group_id AS group_id,
+    max(capacity_group_name_snapshot) AS group_name,sum(quantity)::bigint AS quantity
+  FROM order_item WHERE capacity_group_id IS NOT NULL GROUP BY order_id,capacity_group_id
+""") {
+  orderId: UUID
+  groupId: UUID
+  groupName: String
+  quantity: Int64
+}
+type OrderCreationRequest @table {
+  id: UUID!
+  actorUid: String!
+  payloadHash: String!
+}
+type StaffOrderSummary @view(sql: """
+  SELECT o.id,o.order_number,o.status,o.scheduled_for,o.contact_phone_number,o.client_id,o.created_at,
+    f.balance_cents,f.net_paid_cents,f.is_estimate,
+    COALESCE(i.description,'') AS description,COALESCE(g.quantities,'[]'::jsonb) AS group_quantities
+  FROM customer_order o
+  LEFT JOIN (SELECT order_id,
+    string_agg(quantity::text || '× ' || product_name, ' · ' ORDER BY created_at,id) AS description
+    FROM order_item GROUP BY order_id) i ON i.order_id=o.id
+  LEFT JOIN (SELECT o2.id,
+    COALESCE(p.paid,0)-COALESCE(r.refunded,0) AS net_paid_cents,
+    (CASE WHEN o2.status='CANCELLED' THEN o2.cancellation_total_cents ELSE COALESCE(o2.final_total_cents,o2.subtotal_cents-o2.discount_cents) END)-COALESCE(p.paid,0)+COALESCE(r.refunded,0) AS balance_cents,
+    o2.status<>'CANCELLED' AND o2.final_total_cents IS NULL AS is_estimate
+    FROM customer_order o2
+    LEFT JOIN (SELECT order_id,sum(amount_cents)::bigint paid FROM payment WHERE status='SUCCEEDED' GROUP BY order_id) p ON p.order_id=o2.id
+    LEFT JOIN (SELECT p.order_id,sum(r.amount_cents)::bigint refunded FROM refund r JOIN payment p ON p.id=r.payment_id WHERE r.status='SUCCEEDED' GROUP BY p.order_id) r ON r.order_id=o2.id
+  ) f ON f.id=o.id
+  LEFT JOIN (SELECT order_id,jsonb_agg(jsonb_build_object(
+      'groupId',group_id,'groupName',group_name,'quantity',quantity::text) ORDER BY group_id) AS quantities
+    FROM (SELECT order_id,capacity_group_id AS group_id,max(capacity_group_name_snapshot) AS group_name,
+      sum(quantity)::bigint AS quantity FROM order_item WHERE capacity_group_id IS NOT NULL
+      GROUP BY order_id,capacity_group_id) grouped GROUP BY order_id) g ON g.order_id=o.id
+""") {
+  id: UUID
+  orderNumber: String
+  status: String
+  scheduledFor: Timestamp
+  contactPhoneNumber: String
+  clientId: UUID
+  createdAt: Timestamp
+  balanceCents: Int64
+  netPaidCents: Int64
+  isEstimate: Boolean
+  description: String
+  groupQuantities: Any
+}
+
+# Private retry identities; no connector read/write operation exposes these.
+type OrderActionRequest @table {
+  id: UUID!
+  actorUid: String!
+  payloadHash: String!
+}

@@ -19,7 +19,7 @@ async function call(operationName, variables = {}, claims = admin, mutation = fa
   const body = await response.json();
   return { ok: response.ok && !(body.errors?.length), status: response.status, body };
 }
-const draft = () => ({ id: randomUUID(), name: 'Emulator test', chineseName: '测试', priceCents: 20001, isLechon: false, isActive: true });
+const draft = () => ({ id: randomUUID(), name: 'Emulator test', chineseName: '测试', priceCents: 20001, capacityGroupId: null, isActive: true });
 
 test('admin can list products', async () => {
   const result = await call('ListProducts');

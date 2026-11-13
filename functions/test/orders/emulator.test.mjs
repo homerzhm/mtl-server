@@ -4,6 +4,7 @@ import {randomUUID} from 'node:crypto';
 import {readFile} from 'node:fs/promises';
 import pg from 'pg';
 import {OrderCreationService} from '../../lib/orders/service.js';
+import {BookingConfigurationService,BookingAvailabilityService} from '../../lib/orders/capacity.js';
 import {OrderActionService} from '../../lib/orders/actions.js';
 assert.equal(process.env.GCLOUD_PROJECT,'demo-mtl');
 const pool=new pg.Pool({connectionString:'postgresql://postgres:test-only@127.0.0.1:15432/restaurant',max:8});
@@ -16,15 +17,20 @@ async function query(operationName,variables={}) {
   const r=await fetch('http://127.0.0.1:9399/v1/projects/demo-mtl/locations/northamerica-northeast1/services/restaurant/connectors/staff-admin:executeQuery',{method:'POST',headers:{'Content-Type':'application/json','x-firebase-auth-token':token},body:JSON.stringify({operationName,variables})});
   const body=await r.json();assert.equal(r.ok&&!body.errors?.length,true,JSON.stringify(body));return body.data;
 }
-const input=(quantity=1)=>({id:randomUUID(),items:[{id:randomUUID(),productId:product,expectedRevision:0,quantity}],clientId:null,contactPhoneNumber:null,scheduledFor:'2030-06-01T18:00:00.000Z',allocations:[{minute:780,pigs:quantity}],depositRequiredCents:0,notes:null});
+const lechon=randomUUID();
+const input=(quantity=1)=>({id:randomUUID(),items:[{id:randomUUID(),productId:product,expectedRevision:0,quantity}],clientId:null,contactPhoneNumber:null,scheduledFor:'2030-06-01T18:00:00.000Z',expectedSettingsRevision:0,expectedGroups:[{id:lechon,expectedRevision:0}],allocations:[{groupId:lechon,blockMinute:780,quantity:quantity}],depositRequiredCents:0,notes:null});
 before(async()=>{
   const encode=v=>Buffer.from(JSON.stringify(v)).toString('base64url');
   const token=`${encode({alg:'none'})}.${encode({sub:actor.uid,aud:'demo-mtl',iss:'https://securetoken.google.com/demo-mtl',staff:true,firebase:{sign_in_provider:'google.com'},iat:Math.floor(Date.now()/1000),exp:Math.floor(Date.now()/1000)+3600})}.`;
   const r=await fetch('http://127.0.0.1:9399/v1/projects/demo-mtl/locations/northamerica-northeast1/services/restaurant/connectors/staff-admin:executeQuery',{method:'POST',headers:{'Content-Type':'application/json','x-firebase-auth-token':token},body:JSON.stringify({operationName:'ListOrders',variables:{}})});
   const result=await r.json();assert.equal(!result.errors?.length,true,JSON.stringify(result));
-  for(const migration of ['order-integrity.sql','order-paid-status.sql','order-roast-booking.sql','order-actions.sql'])await pool.query(await readFile(new URL(`../../../migrations/${migration}`,import.meta.url),'utf8'));
+  for(const migration of ['order-integrity.sql','order-paid-status.sql','order-capacity-booking.sql','order-actions.sql'])await pool.query(await readFile(new URL(`../../../migrations/${migration}`,import.meta.url),'utf8'));
   await pool.query(await readFile(new URL('../../../migrations/order-actions.sql',import.meta.url),'utf8')); // Repeatable upgrade.
-  product=randomUUID();await pool.query('INSERT INTO product(id,name,price_cents,is_active,is_lechon,revision,created_at) VALUES($1,\'Test pig\',100,true,true,0,now())',[product]);
+  assert.equal((await pool.query('SELECT count(*)::int n FROM capacity_group')).rows[0].n,0);
+  // Test fixtures use the admin API; production migrations create no groups.
+  await configuration.change(admin,{action:'CREATE_GROUP',id:lechon,code:'LECHON',name:'Lechon',capacityPerBlock:18});
+  await configuration.change(admin,{action:'CREATE_GROUP',id:belly,code:'PORK_BELLY',name:'Pork belly',capacityPerBlock:4});
+  product=randomUUID();await pool.query("INSERT INTO product(id,name,price_cents,is_active,capacity_group_id,revision,created_at) VALUES($1,'Test pig',100,true,$2,0,now())",[product,lechon]);
 });
 after(async()=>{await pool.end();});
 test('atomic creation, summaries, idempotent retry and payload ownership',async()=>{
@@ -36,11 +42,11 @@ test('atomic creation, summaries, idempotent retry and payload ownership',async(
   assert.equal(saved.status,'CONFIRMED');assert.equal(saved.subtotal_cents,100);assert.equal(saved.final_total_cents,null);
   assert.equal((await pool.query('SELECT count(*)::int n FROM payment WHERE order_id=$1',[v.id])).rows[0].n,0);
   const rows=(await query('ListStaffOrderSummaries')).staffOrderSummaries;
-  const summary=rows.find(r=>r.id.replaceAll('-','')===v.id.replaceAll('-',''));assert.ok(summary,JSON.stringify(rows));assert.equal(Number(summary.pigCount),1);assert.equal(Number(summary.balanceCents),100);
+  const summary=rows.find(r=>r.id.replaceAll('-','')===v.id.replaceAll('-',''));assert.ok(summary,JSON.stringify(rows));assert.equal(Number((await query('ListOrderCapacitySummaries',{id:v.id})).orderCapacitySummaries[0].quantity),1);assert.equal(Number(summary.balanceCents),100);
   assert.equal((await query('FindStaffOrderByNumber',{number:saved.order_number})).staffOrderSummaries.length,1);
   assert.equal((await query('FindStaffOrdersByPhone',{phone:'+19999999999'})).staffOrderSummaries.length,0);
-  const availability=await query('ListRoastAvailability',{start:'2030-06-01',end:'2030-07-01'});
-  assert.equal(Number(availability.roastAvailabilities[0].booked),1);
+  const availability=await new BookingAvailabilityService(pool).get(actor,{day:'2030-06-01'});
+  assert.equal(Number(availability.blocks.find(b=>b.groupId===lechon&&b.blockMinute===780).booked),1);
   await assert.rejects(pool.query('UPDATE customer_order SET scheduled_for=now() WHERE id=$1',[v.id]),/ALLOCATION_AWARE_EDIT_REQUIRED/);
   await assert.rejects(pool.query('UPDATE order_item SET quantity=2 WHERE order_id=$1',[v.id]),/ALLOCATION_AWARE_EDIT_REQUIRED/);
   await pool.query("UPDATE customer_order SET status='CANCELLED',cancelled_at=now(),cancellation_total_cents=0 WHERE id=$1",[v.id]);
@@ -53,7 +59,7 @@ test('competing creations cannot both take the last roast place; cancellation an
   const winner=results[0].status==='fulfilled'?a:b,loser=winner===a?b:a;
   await pool.query("UPDATE customer_order SET status='CANCELLED',cancelled_at=now(),cancellation_total_cents=0 WHERE id=$1",[winner.id]);
   await service.create(actor,loser);
-  await assert.rejects(pool.query("UPDATE customer_order SET status='CONFIRMED',cancelled_at=null WHERE id=$1",[winner.id]),/ROAST_CAPACITY/);
+  await assert.rejects(pool.query("UPDATE customer_order SET status='CONFIRMED',cancelled_at=null WHERE id=$1",[winner.id]),/GROUP_CAPACITY/);
 });
 test('stale catalog and invalid allocation roll back every row',async()=>{
   const stale=input();stale.items[0].expectedRevision=5;await assert.rejects(service.create(actor,stale),/CATALOG_CHANGED/);
@@ -62,7 +68,7 @@ test('stale catalog and invalid allocation roll back every row',async()=>{
 });
 
 test('multi-item snapshots, rollback after insert, and number collisions',async()=>{
-  const addon=randomUUID();await pool.query("INSERT INTO product(id,name,price_cents,is_active,is_lechon,revision,created_at) VALUES($1,'Addon',25,true,false,0,now())",[addon]);
+  const addon=randomUUID();await pool.query("INSERT INTO product(id,name,price_cents,is_active,capacity_group_id,revision,created_at) VALUES($1,'Addon',25,true,NULL,0,now())",[addon]);
   const v=input();v.scheduledFor='2030-06-02T18:00:00.000Z';v.items.push({id:randomUUID(),productId:addon,expectedRevision:0,quantity:2});
   await service.create(actor,v);
   const saved=(await pool.query('SELECT * FROM customer_order WHERE id=$1',[v.id])).rows[0];assert.equal(saved.subtotal_cents,150);assert.equal(saved.item_count,2);
@@ -75,20 +81,20 @@ test('multi-item snapshots, rollback after insert, and number collisions',async(
   const collision=input();collision.scheduledFor='2030-06-04T18:00:00.000Z';await collisionService.create(actor,collision);assert.equal(tries,2);
 });
 test('non-lechon orders need no roast places and reject allocations; counts survive catalog changes',async()=>{
-  const addon=randomUUID();await pool.query("INSERT INTO product(id,name,price_cents,is_active,is_lechon,revision,created_at) VALUES($1,'Addon only',25,true,false,0,now())",[addon]);
-  const v=input();v.items[0].productId=addon;v.allocations=[];await service.create(actor,v);
-  const summary=(await query('ListStaffOrderSummaries')).staffOrderSummaries.find(r=>r.id.replaceAll('-','')===v.id.replaceAll('-',''));assert.equal(Number(summary.pigCount),0);
-  await pool.query('UPDATE product SET is_lechon=true WHERE id=$1',[addon]);
-  const again=(await query('ListStaffOrderSummaries')).staffOrderSummaries.find(r=>r.id.replaceAll('-','')===v.id.replaceAll('-',''));assert.equal(Number(again.pigCount),0);
+  const addon=randomUUID();await pool.query("INSERT INTO product(id,name,price_cents,is_active,capacity_group_id,revision,created_at) VALUES($1,'Addon only',25,true,NULL,0,now())",[addon]);
+  const v=input();v.items[0].productId=addon;v.allocations=[];v.expectedGroups=[];await service.create(actor,v);
+  assert.equal((await query('ListOrderCapacitySummaries',{id:v.id})).orderCapacitySummaries.length,0);
+  await pool.query("UPDATE product SET capacity_group_id=$2,revision=revision+1 WHERE id=$1",[addon,lechon]);
+  assert.equal((await query('ListOrderCapacitySummaries',{id:v.id})).orderCapacitySummaries.length,0);
 });
 
 test('overflow, deposit and non-lechon allocation validation leave no order',async()=>{
-  const addon=randomUUID();await pool.query("INSERT INTO product(id,name,price_cents,is_active,is_lechon,revision,created_at) VALUES($1,'High price',2147483647,true,false,0,now())",[addon]);
+  const addon=randomUUID();await pool.query("INSERT INTO product(id,name,price_cents,is_active,capacity_group_id,revision,created_at) VALUES($1,'High price',2147483647,true,NULL,0,now())",[addon]);
   for(const kind of ['overflow','deposit','allocation']) {
-    const v=input();v.scheduledFor='2030-06-07T18:00:00.000Z';v.items[0].productId=addon;v.allocations=[];
+    const v=input();v.scheduledFor='2030-06-07T18:00:00.000Z';v.items[0].productId=addon;v.allocations=[];v.expectedGroups=[];
     if(kind==='overflow')v.items[0].quantity=2;
-    if(kind==='deposit'){v.items[0].productId=product;v.depositRequiredCents=101;v.allocations=[{minute:780,pigs:1}];}
-    if(kind==='allocation')v.allocations=[{minute:780,pigs:1}];
+    if(kind==='deposit'){v.items[0].productId=product;v.expectedGroups=[{id:lechon,expectedRevision:0}];v.depositRequiredCents=101;v.allocations=[{groupId:lechon,blockMinute:780,quantity:1}];}
+    if(kind==='allocation')v.allocations=[{groupId:lechon,blockMinute:780,quantity:1}];
     await assert.rejects(service.create(actor,v),{code:'invalid-argument'});
     assert.equal((await pool.query('SELECT count(*)::int n FROM customer_order WHERE id=$1',[v.id])).rows[0].n,0);
   }
@@ -120,10 +126,10 @@ test('unallocated legacy lechon creation and reopening remain blocked without an
 });
 
 test('phone summary pagination passes 100 rows and ledger aggregates do not multiply',async()=>{
-  const addon=randomUUID();await pool.query("INSERT INTO product(id,name,price_cents,is_active,is_lechon,revision,created_at) VALUES($1,'Summary item',1000,true,false,0,now())",[addon]);
+  const addon=randomUUID();await pool.query("INSERT INTO product(id,name,price_cents,is_active,capacity_group_id,revision,created_at) VALUES($1,'Summary item',1000,true,NULL,0,now())",[addon]);
   const ids=[];
   for(let n=0;n<101;n++) {
-    const v=input();v.items[0].productId=addon;v.allocations=[];v.contactPhoneNumber='+14165550124';v.scheduledFor='2030-06-09T18:00:00.000Z';
+    const v=input();v.items[0].productId=addon;v.allocations=[];v.expectedGroups=[];v.contactPhoneNumber='+14165550124';v.scheduledFor='2030-06-09T18:00:00.000Z';
     await service.create(actor,v);ids.push(v.id);
   }
   const first=(await query('FindStaffOrdersByPhone',{phone:'+14165550124'})).staffOrderSummaries;
@@ -141,8 +147,8 @@ test('phone summary pagination passes 100 rows and ledger aggregates do not mult
 test('dedicated runtime creates with SELECT/INSERT and helper EXECUTE only',async()=>{
   await pool.query('CREATE ROLE orders_runtime_test NOLOGIN');
   await pool.query('GRANT USAGE ON SCHEMA public TO orders_runtime_test');
-  await pool.query('GRANT SELECT ON product,client,customer_order,order_item,order_roast_allocation,order_creation_request TO orders_runtime_test');
-  await pool.query('GRANT INSERT ON customer_order,order_item,order_roast_allocation,order_creation_request,order_audit_event TO orders_runtime_test');
+  await pool.query('GRANT SELECT ON product,client,customer_order,order_item,order_capacity_allocation,order_creation_request,booking_settings,capacity_group TO orders_runtime_test');
+  await pool.query('GRANT INSERT ON customer_order,order_item,order_capacity_allocation,order_creation_request,order_audit_event TO orders_runtime_test');
   await pool.query('GRANT EXECUTE ON FUNCTION public.lock_order_creation_sources(uuid[],uuid) TO orders_runtime_test');
   const restricted=new pg.Pool({connectionString:'postgresql://postgres:test-only@127.0.0.1:15432/restaurant',max:1,options:'-c role=orders_runtime_test'});
   try {
@@ -163,8 +169,8 @@ test('dedicated runtime creates with SELECT/INSERT and helper EXECUTE only',asyn
 const actions=new OrderActionService(pool);
 const action=(id,expectedRevision,kind,amountCents=null)=>({requestId:randomUUID(),id,expectedRevision,action:kind,amountCents});
 async function actionOrder() {
-  const addon=randomUUID();await pool.query("INSERT INTO product(id,name,price_cents,is_active,is_lechon,revision,created_at) VALUES($1,'Cash test',100,true,false,0,now())",[addon]);
-  const v=input();v.items[0].productId=addon;v.allocations=[];await service.create(actor,v);return v.id;
+  const addon=randomUUID();await pool.query("INSERT INTO product(id,name,price_cents,is_active,capacity_group_id,revision,created_at) VALUES($1,'Cash test',100,true,NULL,0,now())",[addon]);
+  const v=input();v.items[0].productId=addon;v.allocations=[];v.expectedGroups=[];await service.create(actor,v);return v.id;
 }
 test('cash overpayment, finalization and pickup are audited, atomic and retry safe',async()=>{
   const id=await actionOrder();
@@ -247,7 +253,7 @@ test('order action callable rejects anonymous callers and enforces actual restri
   const native=input();native.scheduledFor='2030-07-01T18:00:00.000Z';await service.create(actor,native);const id=native.id;
   await pool.query(`CREATE ROLE action_runtime LOGIN PASSWORD 'test-only';
     GRANT USAGE ON SCHEMA public TO action_runtime;
-    GRANT SELECT ON customer_order,payment,refund,order_action_request,order_roast_allocation,order_item,product TO action_runtime;
+    GRANT SELECT ON customer_order,payment,refund,order_action_request,order_capacity_allocation,order_item,product,booking_settings,capacity_group TO action_runtime;
     GRANT UPDATE(revision,status,final_total_cents,completed_at,updated_at) ON customer_order TO action_runtime;
     GRANT INSERT ON payment,order_action_request,order_audit_event TO action_runtime`);
   const restricted=new pg.Pool({connectionString:'postgresql://action_runtime:test-only@127.0.0.1:15432/restaurant',max:2});
@@ -259,4 +265,166 @@ test('order action callable rejects anonymous callers and enforces actual restri
     for(const token of [{staff:'true'}, {staff:true,firebase:{sign_in_provider:'password'}},{}])
       await assert.rejects(service.perform({uid:'bad',token},action(id,3,'PAYMENT',10)),{code:'permission-denied'});
   } finally {await restricted.end();}
+});
+
+const belly=randomUUID();
+const admin={uid:'booking-admin',token:{staff:true,admin:true,firebase:{sign_in_provider:'google.com'}}};
+const configuration=new BookingConfigurationService(pool);
+const availabilityService=new BookingAvailabilityService(pool);
+async function groupProduct(groupId,name='Grouped product') {
+  const id=randomUUID();
+  await pool.query('INSERT INTO product(id,name,price_cents,is_active,capacity_group_id,revision,created_at) VALUES($1,$2,100,true,$3,0,now())',[id,name,groupId]);return id;
+}
+async function configuredInput(day,products) {
+  const v=input();v.scheduledFor=day+'T22:00:00.000Z';v.items=products.map(([productId,quantity])=>({id:randomUUID(),productId,quantity,expectedRevision:0}));
+  v.expectedSettingsRevision=(await pool.query("SELECT revision FROM booking_settings WHERE id='default'")).rows[0].revision;
+  const groups=(await pool.query('SELECT DISTINCT g.id,g.revision FROM product p JOIN capacity_group g ON g.id=p.capacity_group_id WHERE p.id=ANY($1::uuid[])',[v.items.map(i=>i.productId)])).rows;
+  v.expectedGroups=groups.map(g=>({id:g.id,expectedRevision:g.revision}));v.allocations=[];return v;
+}
+const cancel=id=>pool.query("UPDATE customer_order SET status='CANCELLED',cancelled_at=now(),cancellation_total_cents=0 WHERE id=$1",[id]);
+const settings=async()=> (await pool.query("SELECT * FROM booking_settings WHERE id='default'")).rows[0];
+const setBlocks=async blockMinutes=>configuration.change(admin,{action:'UPDATE_SETTINGS',expectedRevision:(await settings()).revision,blockMinutes});
+async function updateGroup(id,patch={}) {
+  const g=(await pool.query('SELECT * FROM capacity_group WHERE id=$1',[id])).rows[0];
+  return configuration.change(admin,{action:'UPDATE_GROUP',id,expectedRevision:g.revision,name:g.name,capacityPerBlock:g.capacity_per_block,archived:g.archived,...patch});
+}
+test('independent pools accept 18 lechon and 4 belly, products share limits and mixed splits respect pickup',async()=>{
+  const bp=await groupProduct(belly),bp2=await groupProduct(belly);
+  const v=await configuredInput('2030-08-01',[[product,18],[bp,2],[bp2,2]]);
+  v.allocations=[{groupId:lechon,blockMinute:780,quantity:18},{groupId:belly,blockMinute:780,quantity:4}];await service.create(actor,v);
+  for(const [p,g] of [[product,lechon],[bp,belly]]) {
+    const full=await configuredInput('2030-08-01',[[p,1]]);full.allocations=[{groupId:g,blockMinute:780,quantity:1}];
+    await assert.rejects(service.create(actor,full),/GROUP_CAPACITY/);
+  }
+  const rows=(await availabilityService.get(actor,{day:'2030-08-01'})).blocks;
+  assert.equal(rows.find(r=>r.groupId===belly&&r.blockMinute===780).remaining,'0');
+  assert.equal(rows.find(r=>r.groupId===belly&&r.blockMinute===660).remaining,'4');
+  const split=await configuredInput('2030-08-02',[[product,2],[bp,2]]);
+  split.allocations=[{groupId:lechon,blockMinute:660,quantity:1},{groupId:lechon,blockMinute:780,quantity:1},{groupId:belly,blockMinute:930,quantity:2}];
+  await assert.rejects(service.create(actor,{...split,scheduledFor:'2030-08-02T18:00:00Z'}),/PICKUP_EXPIRED/);
+  await service.create(actor,split);
+  const summaries=(await query('ListOrderCapacitySummaries',{id:split.id})).orderCapacitySummaries;
+  assert.equal(summaries.length,2);assert.deepEqual(summaries.map(s=>Number(s.quantity)),[2,2]);
+  const saved=(await pool.query('SELECT order_number FROM customer_order WHERE id=$1',[split.id])).rows[0];
+  const summary=(await query('FindStaffOrderByNumber',{number:saved.order_number})).staffOrderSummaries[0];
+  assert.deepEqual(summary.groupQuantities.map(g=>g.quantity),['2','2']);assert.equal(Number(summary.balanceCents),400);
+});
+test('settings/group revisions, reservation conflicts, safe edits and saved retry identities',async()=>{
+  const gp=await groupProduct(belly),v=await configuredInput('2030-08-03',[[gp,4]]);
+  v.allocations=[{groupId:belly,blockMinute:780,quantity:4}];await service.create(actor,v);
+  await assert.rejects(setBlocks([660,930,1080]),/BOOKING_BLOCK_IN_USE/);
+  await assert.rejects(updateGroup(belly,{capacityPerBlock:3}),/GROUP_CAPACITY_IN_USE/);
+  await assert.rejects(updateGroup(belly,{archived:true}),/GROUP_HAS_PRODUCTS/);
+  const s=await settings();await setBlocks([...s.block_minutes,1140]);
+  await assert.rejects(configuration.change(admin,{action:'UPDATE_SETTINGS',expectedRevision:s.revision,blockMinutes:s.block_minutes}),/BOOKING_CONFIGURATION_CONFLICT/);
+  const stale=await configuredInput('2030-08-04',[[gp,1]]);stale.allocations=[{groupId:belly,blockMinute:780,quantity:1}];stale.expectedSettingsRevision=s.revision;
+  await assert.rejects(service.create(actor,stale),/BOOKING_CONFIGURATION_CHANGED/);
+  const fresh=await configuredInput('2030-08-04',[[gp,1]]);fresh.allocations=stale.allocations;
+  await updateGroup(belly,{name:'Belly renamed'});
+  await assert.rejects(service.create(actor,fresh),/BOOKING_CONFIGURATION_CHANGED/);
+  assert.deepEqual(await service.create(actor,v),{id:v.id}); // Replay despite now-stale revisions.
+  const snapshot=(await pool.query('SELECT capacity_group_name_snapshot FROM order_item WHERE order_id=$1',[v.id])).rows[0];assert.equal(snapshot.capacity_group_name_snapshot,'Pork belly');
+  await setBlocks(s.block_minutes);
+});
+test('reassignment and archival preserve booked groups; cancelled removed blocks cannot reopen',async()=>{
+  const id=randomUUID();await configuration.change(admin,{action:'CREATE_GROUP',id,code:'ARCHIVE_TEST',name:'Archive test',capacityPerBlock:4});
+  const p=await groupProduct(id),v=await configuredInput('2030-08-05',[[p,2]]);v.allocations=[{groupId:id,blockMinute:780,quantity:2}];await service.create(actor,v);
+  await pool.query('UPDATE product SET capacity_group_id=NULL,revision=revision+1 WHERE id=$1',[p]);
+  await updateGroup(id,{archived:true});
+  await cancel(v.id);await pool.query("UPDATE customer_order SET status='CONFIRMED',cancelled_at=NULL,cancellation_total_cents=NULL WHERE id=$1",[v.id]);
+  assert.equal((await pool.query('SELECT group_id FROM order_capacity_allocation WHERE order_id=$1',[v.id])).rows[0].group_id,id);
+  await assert.rejects(groupProduct(id),/GROUP_UNAVAILABLE/);
+  const snapshot=(await query('ListOrderCapacitySummaries',{id:v.id})).orderCapacitySummaries[0];assert.equal(snapshot.groupName,'Archive test');
+  // Use a new unoccupied block so other test reservations do not interfere.
+  const original=(await settings()).block_minutes;await setBlocks([...original,1155]);
+  const p2=await groupProduct(belly),removed=await configuredInput('2030-08-06',[[p2,1]]);removed.scheduledFor='2030-08-06T23:30:00Z';removed.allocations=[{groupId:belly,blockMinute:1155,quantity:1}];
+  await service.create(actor,removed);await cancel(removed.id);await setBlocks(original);
+  await assert.rejects(pool.query("UPDATE customer_order SET status='CONFIRMED',cancelled_at=NULL,cancellation_total_cents=NULL WHERE id=$1",[removed.id]),/BOOKING_BLOCK_UNAVAILABLE/);
+});
+test('competing configuration edits and bookings cannot invalidate capacity',async()=>{
+  const id=randomUUID();await configuration.change(admin,{action:'CREATE_GROUP',id,code:'RACE_TEST',name:'Race test',capacityPerBlock:4});
+  const p=await groupProduct(id),v=await configuredInput('2030-08-07',[[p,4]]);v.allocations=[{groupId:id,blockMinute:780,quantity:4}];
+  const outcomes=await Promise.allSettled([service.create(actor,v),updateGroup(id,{capacityPerBlock:3})]);
+  assert.equal(outcomes.filter(r=>r.status==='fulfilled').length,1);
+  const booked=(await pool.query("SELECT COALESCE(sum(a.quantity),0)::int n FROM order_capacity_allocation a JOIN customer_order o ON o.id=a.order_id WHERE a.group_id=$1 AND o.status<>'CANCELLED'",[id])).rows[0].n;
+  const limit=(await pool.query('SELECT capacity_per_block FROM capacity_group WHERE id=$1',[id])).rows[0].capacity_per_block;assert.ok(booked<=limit);
+});
+test('configuration callables authorize before dependencies and restricted grants support config and availability',async()=>{
+  await assert.rejects(configuration.change(actor,{action:'UPDATE_SETTINGS',expectedRevision:0,blockMinutes:[660]}),{code:'permission-denied'});
+  const endpoint='http://127.0.0.1:5001/demo-mtl/northamerica-northeast1/';
+  for(const name of ['manageBookingConfiguration','getBookingAvailability']) {
+    const denied=await fetch(endpoint+name,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({data:{}})});
+    assert.equal((await denied.json()).error.status,'UNAUTHENTICATED');
+  }
+  const token=`${encode({alg:'none'})}.${encode({sub:admin.uid,aud:'demo-mtl',iss:'https://securetoken.google.com/demo-mtl',staff:true,admin:true,firebase:{sign_in_provider:'google.com'},iat:Math.floor(Date.now()/1000),exp:Math.floor(Date.now()/1000)+3600})}.`;
+  const request={action:'CREATE_GROUP',id:randomUUID(),code:'CALLABLE_GROUP',name:'Callable group',capacityPerBlock:2};
+  const response=await fetch(endpoint+'manageBookingConfiguration',{method:'POST',headers:{'Content-Type':'application/json',Authorization:`Bearer ${token}`},body:JSON.stringify({data:request})});
+  assert.equal((await response.json()).result.id,request.id);
+  const read=await fetch(endpoint+'getBookingAvailability',{method:'POST',headers:{'Content-Type':'application/json',Authorization:`Bearer ${token}`},body:JSON.stringify({data:{day:'2030-08-01'}})});
+  assert.equal((await read.json()).result.blocks.length>0,true);
+  await pool.query(`CREATE ROLE booking_runtime NOLOGIN;
+    GRANT USAGE ON SCHEMA public TO booking_runtime;
+    GRANT SELECT ON booking_settings,capacity_group,product,order_capacity_allocation,customer_order TO booking_runtime;
+    GRANT INSERT ON capacity_group TO booking_runtime;
+    GRANT UPDATE(block_minutes,revision,updated_at,updated_by) ON booking_settings TO booking_runtime;
+    GRANT UPDATE(name,capacity_per_block,archived,revision,updated_at,updated_by) ON capacity_group TO booking_runtime`);
+  const restricted=new pg.Pool({connectionString:'postgresql://postgres:test-only@127.0.0.1:15432/restaurant',options:'-c role=booking_runtime',max:2});
+  try {
+    await assert.rejects(restricted.query('UPDATE product SET name=name'),/permission denied/);
+    const runtime=new BookingConfigurationService(restricted),s=await settings();
+    await runtime.change(admin,{action:'UPDATE_SETTINGS',expectedRevision:s.revision,blockMinutes:s.block_minutes});
+    await runtime.change(admin,{action:'UPDATE_GROUP',id:request.id,expectedRevision:0,name:'Updated',capacityPerBlock:3,archived:false});
+    assert.ok((await new BookingAvailabilityService(restricted).get(actor,{day:'2030-08-01'})).blocks.length);
+  } finally {await restricted.end();await pool.query('DROP OWNED BY booking_runtime; DROP ROLE booking_runtime');}
+});
+test('configuration reads and availability paginate at 100 with stable ordering',async()=>{
+  for(let n=0;n<101;n++) await configuration.change(admin,{action:'CREATE_GROUP',id:randomUUID(),code:'PAGE_'+n,name:'Page '+n,capacityPerBlock:1});
+  const all=[];let offset=0;
+  do {const page=await availabilityService.get(actor,{day:'2030-09-01',offset});assert.ok(page.blocks.length<=100);all.push(...page.blocks);offset=page.nextOffset;} while(offset!==null);
+  assert.ok(all.length>100);assert.equal(new Set(all.map(r=>r.groupId+':'+r.blockMinute)).size,all.length);
+  const listed=(await query('ListCapacityGroups')).capacityGroups,next=(await query('ListCapacityGroups',{offset:100})).capacityGroups;assert.equal(listed.length,100);assert.ok(next.length>0);assert.equal(new Set([...listed,...next].map(g=>g.id)).size,listed.length+next.length);
+  assert.deepEqual((await query('GetBookingSettings')).bookingSettings.blockMinutes,[660,780,930,1080]);
+});
+
+test('database guards reject allocation bypasses and migration preserves explicit groups and saved edits',async()=>{
+  await assert.rejects(pool.query("UPDATE booking_settings SET block_minutes=ARRAY[661],revision=revision+1 WHERE id='default'"),/BOOKING_CONFIGURATION_INVALID/);
+  await assert.rejects(pool.query('DELETE FROM capacity_group WHERE id=$1',[belly]),/ARCHIVE_GROUP_INSTEAD/);
+  await assert.rejects(pool.query('UPDATE capacity_group SET code=$2,revision=revision+1 WHERE id=$1',[belly,'OTHER_CODE']),/BOOKING_CONFIGURATION_CONFLICT/);
+  const existing=(await pool.query('SELECT id FROM order_capacity_allocation LIMIT 1')).rows[0].id;
+  await assert.rejects(pool.query('DELETE FROM order_capacity_allocation WHERE id=$1',[existing]),/ALLOCATION_AWARE_EDIT_REQUIRED/);
+  const db=await pool.connect(),id=randomUUID();
+  try {
+    await db.query('BEGIN');
+    await db.query("INSERT INTO customer_order(id,order_number,subtotal_cents,item_count,booking_managed,scheduled_for,created_at,updated_at) VALUES($1,'BYPA55',100,1,true,'2030-10-01T18:00:00Z',now(),now())",[id]);
+    await db.query("INSERT INTO order_item(id,order_id,product_id,product_name,capacity_group_id,capacity_group_name_snapshot,catalog_unit_price_cents,unit_price_cents,quantity,created_at) VALUES($1,$2,$3,'Incomplete allocation',$4,'Lechon',100,100,1,now())",[randomUUID(),id,product,lechon]);
+    await assert.rejects(db.query('COMMIT'),/GROUP_ALLOCATION_INVALID/);
+  } finally {await db.query('ROLLBACK');db.release();}
+  assert.equal((await pool.query('SELECT count(*)::int n FROM customer_order WHERE id=$1',[id])).rows[0].n,0);
+  const before=await settings(),group=(await pool.query('SELECT * FROM capacity_group WHERE id=$1',[belly])).rows[0];
+  await pool.query(await readFile(new URL('../../../migrations/order-capacity-booking.sql',import.meta.url),'utf8'));
+  assert.deepEqual(await settings(),before);assert.deepEqual((await pool.query('SELECT * FROM capacity_group WHERE id=$1',[belly])).rows[0],group);
+});
+
+async function connector(operationName,variables,claims,mutation=false) {
+  const token=`${encode({alg:'none'})}.${encode({sub:'connector-capacity',aud:'demo-mtl',iss:'https://securetoken.google.com/demo-mtl',iat:Math.floor(Date.now()/1000),exp:Math.floor(Date.now()/1000)+3600,...claims})}.`;
+  const result=await fetch('http://127.0.0.1:9399/v1/projects/demo-mtl/locations/northamerica-northeast1/services/restaurant/connectors/staff-admin:execute'+(mutation?'Mutation':'Query'),{
+    method:'POST',headers:{'Content-Type':'application/json',...(claims?{'x-firebase-auth-token':token}:{})},body:JSON.stringify({operationName,variables})});
+  const body=await result.json();return {ok:result.ok&&!body.errors?.length,body};
+}
+test('connector product assignments enforce admin, revision and archival; configuration reads enforce staff policy',async()=>{
+  const draft={id:randomUUID(),name:'Connector group',priceCents:100,isActive:true,capacityGroupId:belly};
+  const made=await connector('CreateProduct',draft,admin.token,true);assert.equal(made.ok,true,JSON.stringify(made.body));
+  const edit={...draft,capacityGroupId:lechon,expectedRevision:0};
+  assert.equal((await connector('UpdateProduct',edit,actor.token,true)).ok,false);
+  const changes=await Promise.all([connector('UpdateProduct',edit,admin.token,true),connector('UpdateProduct',{...edit,capacityGroupId:null},admin.token,true)]);
+  assert.equal(changes.filter(r=>r.ok).length,1);
+  const saved=await connector('GetProduct',{id:draft.id},{firebase:{sign_in_provider:'password'}});assert.equal(saved.ok,true);assert.equal(saved.body.data.product.revision,1);
+  const archived=(await pool.query('SELECT id FROM capacity_group WHERE archived LIMIT 1')).rows[0].id;
+  assert.equal((await connector('UpdateProduct',{...draft,capacityGroupId:archived,expectedRevision:1},admin.token,true)).ok,false);
+  for(const op of ['GetBookingSettings','ListCapacityGroups','ListOrderCapacityAllocations','ListOrderCapacitySummaries']) {
+    const vars=op.startsWith('ListOrder')?{id:randomUUID()}:{};
+    for(const claims of [null,{firebase:{sign_in_provider:'google.com'}},{staff:'true',firebase:{sign_in_provider:'google.com'}},{staff:true,firebase:{sign_in_provider:'password'}}])
+      assert.equal((await connector(op,vars,claims)).ok,false,op);
+    for(const claims of [actor.token,{admin:true,firebase:{sign_in_provider:'google.com'}}])assert.equal((await connector(op,vars,claims)).ok,true,op);
+  }
 });

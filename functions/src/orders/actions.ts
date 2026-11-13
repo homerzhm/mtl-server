@@ -1,7 +1,8 @@
 import {createHash, randomUUID} from 'node:crypto';
 import {HttpsError} from 'firebase-functions/v2/https';
 import type {Pool} from 'pg';
-import {requireOrderCaller, type OrderCaller} from './service';
+import {lockCapacity} from './capacity';
+import {requireOrderCaller, type OrderCaller} from './permissions';
 
 export type OrderAction = {requestId: string; id: string; expectedRevision: number;
   action: 'PAYMENT' | 'PAID' | 'PICKUP'; amountCents: number | null};
@@ -35,6 +36,7 @@ export class OrderActionService {
           throw new HttpsError('already-exists','REQUEST_CONFLICT');
         await db.query('COMMIT'); return {id:input.id};
       }
+      await lockCapacity(db);
       const result = await db.query('SELECT * FROM customer_order WHERE id=$1 FOR UPDATE',[input.id]);
       const order = result.rows[0];
       if (!order || order.revision !== input.expectedRevision) throw new HttpsError('aborted','ORDER_CONFLICT');

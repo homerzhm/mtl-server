@@ -27,6 +27,8 @@ fragment OrderItemFields on OrderItem {
   orderId
   productId
   productName
+  capacityGroupId
+  capacityGroupNameSnapshot
   catalogUnitPriceCents
   unitPriceCents
   quantity
