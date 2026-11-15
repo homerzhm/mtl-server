@@ -5,20 +5,22 @@ import {lockCapacity} from './capacity';
 import {requireOrderCaller, type OrderCaller} from './permissions';
 
 export type OrderAction = {requestId: string; id: string; expectedRevision: number;
-  action: 'PAYMENT' | 'PAID' | 'PICKUP'; amountCents: number | null};
+  action: 'PAYMENT' | 'PAID' | 'PICKUP' | 'PAYMENT_EDIT'; amountCents: number | null; paymentId?: string};
 const uuid = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 export function validateAction(raw: unknown): OrderAction {
   const v = raw as Record<string, unknown> | null;
   const invalid = () => new HttpsError('invalid-argument', 'ORDER_ACTION_INVALID');
   if (!v || typeof v !== 'object' || Array.isArray(v) ||
-      Object.keys(v).some(k => !['requestId','id','expectedRevision','action','amountCents'].includes(k)) ||
+      Object.keys(v).some(k => !['requestId','id','expectedRevision','action','amountCents','paymentId'].includes(k)) ||
       typeof v.requestId !== 'string' || !uuid.test(v.requestId) || typeof v.id !== 'string' || !uuid.test(v.id) ||
       !Number.isInteger(v.expectedRevision) || Number(v.expectedRevision) < 0 || Number(v.expectedRevision) >= 2147483647 ||
-      typeof v.action !== 'string' || !['PAYMENT','PAID','PICKUP'].includes(v.action)) throw invalid();
+      typeof v.action !== 'string' || !['PAYMENT','PAID','PICKUP','PAYMENT_EDIT'].includes(v.action)) throw invalid();
   const amount = v.amountCents ?? null;
-  if (v.action === 'PAYMENT' ? !Number.isInteger(amount) || Number(amount) <= 0 || Number(amount) > 2147483647 : amount !== null) throw invalid();
+  if (v.action === 'PAYMENT_EDIT' ? !Number.isInteger(amount) || Number(amount) < 0 || Number(amount) > 2147483647 : v.action === 'PAYMENT' ? !Number.isInteger(amount) || Number(amount) <= 0 || Number(amount) > 2147483647 : amount !== null) throw invalid();
+  if (v.action === 'PAYMENT_EDIT' ? typeof v.paymentId !== 'string' || !uuid.test(v.paymentId) : v.paymentId !== undefined) throw invalid();
   return {requestId:v.requestId.toLowerCase(),id:v.id.toLowerCase(),expectedRevision:Number(v.expectedRevision),
-    action:v.action as OrderAction['action'],amountCents:amount as number | null};
+    action:v.action as OrderAction['action'],amountCents:amount as number | null,
+    ...(v.action === 'PAYMENT_EDIT' ? {paymentId:(v.paymentId as string).toLowerCase()} : {})};
 }
 
 export class OrderActionService {
@@ -40,11 +42,38 @@ export class OrderActionService {
       const result = await db.query('SELECT * FROM customer_order WHERE id=$1 FOR UPDATE',[input.id]);
       const order = result.rows[0];
       if (!order || order.revision !== input.expectedRevision) throw new HttpsError('aborted','ORDER_CONFLICT');
+      let beforePayment: unknown = null;
       const before = {status:order.status,finalTotalCents:order.final_total_cents,
         completedAt:order.completed_at?.toISOString() ?? null};
       const revision = order.revision + 1;
       let payment: unknown = null;
-      if (input.action === 'PAYMENT') {
+      if (input.action === 'PAYMENT_EDIT') {
+        if (!['CONFIRMED','PAID'].includes(order.status) && actor.token.admin !== true)
+          throw new HttpsError('failed-precondition','ORDER_LOCKED');
+        const receipt = (await db.query('SELECT * FROM payment WHERE id=$1 AND order_id=$2 FOR UPDATE',[input.paymentId,input.id])).rows[0];
+        if (!receipt || receipt.method !== 'CASH' || receipt.status !== 'SUCCEEDED')
+          throw new HttpsError('failed-precondition','ORDER_LOCKED');
+        const totals = (await db.query(`SELECT
+          COALESCE((SELECT sum(amount_cents) FROM payment WHERE order_id=$1 AND status='SUCCEEDED'),0)
+          - COALESCE((SELECT sum(r.amount_cents) FROM refund r JOIN payment p ON p.id=r.payment_id
+            WHERE p.order_id=$1 AND r.status='SUCCEEDED'),0) AS net`,[input.id])).rows[0];
+        const total = order.status === 'CANCELLED' ? order.cancellation_total_cents
+          : order.final_total_cents ?? order.subtotal_cents - order.discount_cents;
+        const balance = BigInt(total) - BigInt(totals.net);
+        const maximum = BigInt(receipt.amount_cents) + (balance > 0n ? balance : 0n);
+        if (BigInt(input.amountCents!) > maximum)
+          throw new HttpsError('invalid-argument','ORDER_PAYMENT_EDIT_AMOUNT');
+        beforePayment = {id:receipt.id,amountCents:receipt.amount_cents,status:receipt.status,
+          receivedAt:receipt.received_at.toISOString()};
+        // Parent revision precedes every ledger mutation. A correction never changes the agreed total.
+        const status = order.status === 'PAID' && balance + BigInt(receipt.amount_cents) - BigInt(input.amountCents!) > 0n
+          ? 'CONFIRMED' : order.status;
+        await db.query('UPDATE customer_order SET revision=$2,status=$3,updated_at=now() WHERE id=$1',[input.id,revision,status]);
+        await db.query(`UPDATE payment SET amount_cents=$2,status=$3 WHERE id=$1`,
+          [receipt.id,input.amountCents === 0 ? receipt.amount_cents : input.amountCents,input.amountCents === 0 ? 'VOIDED' : 'SUCCEEDED']);
+        payment = {id:receipt.id,amountCents:input.amountCents === 0 ? receipt.amount_cents : input.amountCents,
+          status:input.amountCents === 0 ? 'VOIDED' : 'SUCCEEDED',receivedAt:receipt.received_at.toISOString()};
+      } else if (input.action === 'PAYMENT') {
         if (order.status !== 'CONFIRMED') throw new HttpsError('failed-precondition','ORDER_LOCKED');
         // Every ledger writer locks/increments the parent revision before inserting.
         await db.query('UPDATE customer_order SET revision=$2,updated_at=now() WHERE id=$1',[input.id,revision]);
@@ -70,8 +99,8 @@ export class OrderActionService {
       const after = (await db.query('SELECT status,final_total_cents,completed_at FROM customer_order WHERE id=$1',[input.id])).rows[0];
       await db.query(`INSERT INTO order_audit_event(id,order_id,action,actor_uid,occurred_at,order_revision,changes)
         VALUES($1,$2,$3,$4,now(),$5,$6::jsonb)`,[randomUUID(),input.id,
-        {PAYMENT:'PAYMENT_RECEIVED',PAID:'ORDER_MARKED_PAID',PICKUP:'ORDER_COMPLETED'}[input.action],actor.uid,revision,
-        JSON.stringify({before,after:{status:after.status,finalTotalCents:after.final_total_cents,
+        {PAYMENT:'PAYMENT_RECEIVED',PAID:'ORDER_MARKED_PAID',PICKUP:'ORDER_COMPLETED',PAYMENT_EDIT:input.amountCents === 0 ? 'PAYMENT_REMOVED' : 'PAYMENT_CORRECTED'}[input.action],actor.uid,revision,
+        JSON.stringify({before:{...before,...(input.action === 'PAYMENT_EDIT' ? {payment:beforePayment} : {})},after:{status:after.status,finalTotalCents:after.final_total_cents,
           completedAt:after.completed_at?.toISOString() ?? null,payment}})]);
       await db.query('INSERT INTO order_action_request(id,actor_uid,payload_hash) VALUES($1,$2,$3)',[input.requestId,actor.uid,hash]);
       await db.query('COMMIT'); return {id:input.id};

@@ -24,7 +24,7 @@ before(async()=>{
   const token=`${encode({alg:'none'})}.${encode({sub:actor.uid,aud:'demo-mtl',iss:'https://securetoken.google.com/demo-mtl',staff:true,firebase:{sign_in_provider:'google.com'},iat:Math.floor(Date.now()/1000),exp:Math.floor(Date.now()/1000)+3600})}.`;
   const r=await fetch('http://127.0.0.1:9399/v1/projects/demo-mtl/locations/northamerica-northeast1/services/restaurant/connectors/staff-admin:executeQuery',{method:'POST',headers:{'Content-Type':'application/json','x-firebase-auth-token':token},body:JSON.stringify({operationName:'ListOrders',variables:{}})});
   const result=await r.json();assert.equal(!result.errors?.length,true,JSON.stringify(result));
-  for(const migration of ['order-integrity.sql','order-paid-status.sql','order-capacity-booking.sql','order-actions.sql'])await pool.query(await readFile(new URL(`../../../migrations/${migration}`,import.meta.url),'utf8'));
+  for(const migration of ['order-integrity.sql','order-paid-status.sql','order-capacity-booking.sql','order-actions.sql','payment-edits.sql'])await pool.query(await readFile(new URL(`../../../migrations/${migration}`,import.meta.url),'utf8'));
   await pool.query(await readFile(new URL('../../../migrations/order-actions.sql',import.meta.url),'utf8')); // Repeatable upgrade.
   assert.equal((await pool.query('SELECT count(*)::int n FROM capacity_group')).rows[0].n,0);
   // Test fixtures use the admin API; production migrations create no groups.
@@ -133,7 +133,7 @@ test('multi-item snapshots, rollback after insert, and number collisions',async(
 });
 test('non-lechon orders need no roast places and reject allocations; counts survive catalog changes',async()=>{
   const addon=randomUUID();await pool.query("INSERT INTO product(id,name,price_cents,is_active,capacity_group_id,revision,created_at) VALUES($1,'Addon only',25,true,NULL,0,now())",[addon]);
-  const v=input();v.items[0].productId=addon;v.allocations=[];v.expectedGroups=[];await service.create(actor,v);
+  const v=input();v.items[0].productId=addon;v.allocations=[];v.expectedGroups=[];v.expectedSettingsRevision=(await pool.query("SELECT revision FROM booking_settings WHERE id='default'")).rows[0].revision;await service.create(actor,v);
   assert.equal((await query('ListOrderCapacitySummaries',{id:v.id})).orderCapacitySummaries.length,0);
   await pool.query("UPDATE product SET capacity_group_id=$2,revision=revision+1 WHERE id=$1",[addon,lechon]);
   assert.equal((await query('ListOrderCapacitySummaries',{id:v.id})).orderCapacitySummaries.length,0);
@@ -231,7 +231,7 @@ const actions=new OrderActionService(pool);
 const action=(id,expectedRevision,kind,amountCents=null)=>({requestId:randomUUID(),id,expectedRevision,action:kind,amountCents});
 async function actionOrder() {
   const addon=randomUUID();await pool.query("INSERT INTO product(id,name,price_cents,is_active,capacity_group_id,revision,created_at) VALUES($1,'Cash test',100,true,NULL,0,now())",[addon]);
-  const v=input();v.items[0].productId=addon;v.allocations=[];v.expectedGroups=[];await service.create(actor,v);return v.id;
+  const v=input();v.items[0].productId=addon;v.allocations=[];v.expectedGroups=[];v.expectedSettingsRevision=(await pool.query("SELECT revision FROM booking_settings WHERE id='default'")).rows[0].revision;await service.create(actor,v);return v.id;
 }
 test('cash overpayment, finalization and pickup are audited, atomic and retry safe',async()=>{
   const id=await actionOrder();
@@ -316,13 +316,18 @@ test('order action callable rejects anonymous callers and enforces actual restri
     GRANT USAGE ON SCHEMA public TO action_runtime;
     GRANT SELECT ON customer_order,payment,refund,order_action_request,order_capacity_allocation,order_item,product,booking_settings,capacity_group TO action_runtime;
     GRANT UPDATE(revision,status,final_total_cents,completed_at,updated_at) ON customer_order TO action_runtime;
+    GRANT UPDATE(amount_cents,status) ON payment TO action_runtime;
     GRANT INSERT ON payment,order_action_request,order_audit_event TO action_runtime`);
   const restricted=new pg.Pool({connectionString:'postgresql://action_runtime:test-only@127.0.0.1:15432/restaurant',max:2});
   try {
     const service=new OrderActionService(restricted);
     await service.perform(actor,action(id,0,'PAYMENT',100));
     await service.perform({...actor,token:{admin:true,firebase:{sign_in_provider:'google.com'}}},action(id,1,'PAID'));
-    await service.perform(actor,action(id,2,'PICKUP'));
+    const receipt=(await pool.query('SELECT id FROM payment WHERE order_id=$1',[id])).rows[0].id;
+    await service.perform(actor,{...action(id,2,'PAYMENT_EDIT',90),paymentId:receipt});
+    await service.perform(actor,action(id,3,'PAYMENT',10));
+    await service.perform(actor,action(id,4,'PAID'));
+    await service.perform(actor,action(id,5,'PICKUP'));
     for(const token of [{staff:'true'}, {staff:true,firebase:{sign_in_provider:'password'}},{}])
       await assert.rejects(service.perform({uid:'bad',token},action(id,3,'PAYMENT',10)),{code:'permission-denied'});
   } finally {await restricted.end();}
@@ -488,4 +493,90 @@ test('connector product assignments enforce admin, revision and archival; config
       assert.equal((await connector(op,vars,claims)).ok,false,op);
     for(const claims of [actor.token,{admin:true,firebase:{sign_in_provider:'google.com'}}])assert.equal((await connector(op,vars,claims)).ok,true,op);
   }
+});
+
+const paymentEdit=(id,revision,paymentId,amount)=>({...action(id,revision,'PAYMENT_EDIT',amount),paymentId});
+const savedOrder=async id=>(await pool.query('SELECT * FROM customer_order WHERE id=$1',[id])).rows[0];
+const savedPayment=async id=>(await pool.query('SELECT * FROM payment WHERE id=$1',[id])).rows[0];
+test('cash correction is atomic, capped, idempotent and preserves receipt identity',async()=>{
+  const id=await actionOrder(),receipt=action(id,0,'PAYMENT',60);await actions.perform(actor,receipt);
+  const original=await savedPayment(receipt.requestId);
+  await assert.rejects(actions.perform(actor,paymentEdit(id,1,receipt.requestId,101)),{code:'invalid-argument'});
+  await assert.rejects(actions.perform(actor,paymentEdit(id,1,randomUUID(),50)),/ORDER_LOCKED/);
+  const other=await actionOrder();await assert.rejects(actions.perform(actor,paymentEdit(other,0,receipt.requestId,50)),/ORDER_LOCKED/);
+  const edit=paymentEdit(id,1,receipt.requestId,100);
+  await actions.perform(actor,edit);await actions.perform(actor,edit);
+  await assert.rejects(actions.perform(actor,{...edit,amountCents:90}),/REQUEST_CONFLICT/);
+  await assert.rejects(actions.perform({...actor,uid:'other'},edit),/REQUEST_CONFLICT/);
+  assert.equal((await savedOrder(id)).revision,2);
+  const corrected=await savedPayment(receipt.requestId);
+  assert.equal(corrected.amount_cents,100);assert.equal(+corrected.received_at,+original.received_at);
+  assert.equal(+corrected.created_at,+original.created_at);
+  const audit=(await pool.query("SELECT * FROM order_audit_event WHERE order_id=$1 AND action='PAYMENT_CORRECTED'",[id])).rows[0];
+  assert.equal(audit.actor_uid,actor.uid);assert.equal(audit.changes.before.payment.amountCents,60);
+  assert.equal(audit.changes.after.payment.amountCents,100);
+  // An unchanged amount is acknowledged once; its identity can still reconcile.
+  const same=paymentEdit(id,2,receipt.requestId,100);await actions.perform(actor,same);await actions.perform(actor,same);
+  assert.equal((await savedOrder(id)).revision,3);
+  const remove=paymentEdit(id,3,receipt.requestId,0);await actions.perform(actor,remove);await actions.perform(actor,remove);
+  assert.equal((await savedPayment(receipt.requestId)).status,'VOIDED');
+  assert.equal((await savedPayment(receipt.requestId)).amount_cents,100);
+  await assert.rejects(actions.perform(actor,paymentEdit(id,4,receipt.requestId,1)),/ORDER_LOCKED/);
+  assert.equal(Number((await query('GetOrder',{id})).financials[0].netPaidCents),0);
+  await assert.rejects(pool.query('UPDATE payment SET received_at=now() WHERE id=$1',[receipt.requestId]),/PAYMENT_IDENTITY_IMMUTABLE/);
+});
+test('Paid corrections reopen only when owing, retain final total and serialize with pickup',async()=>{
+  const id=await actionOrder(),receipt=action(id,0,'PAYMENT',120);await actions.perform(actor,receipt);
+  await actions.perform(actor,action(id,1,'PAID'));
+  await assert.rejects(actions.perform(actor,paymentEdit(id,2,receipt.requestId,121)),{code:'invalid-argument'});
+  await actions.perform(actor,paymentEdit(id,2,receipt.requestId,110));assert.equal((await savedOrder(id)).status,'PAID');
+  const results=await Promise.allSettled([actions.perform(actor,paymentEdit(id,3,receipt.requestId,90)),actions.perform(actor,action(id,3,'PICKUP'))]);
+  assert.equal(results.filter(r=>r.status==='fulfilled').length,1);
+  assert.match(results.find(r=>r.status==='rejected').reason.message,/ORDER_CONFLICT/);
+  const order=await savedOrder(id);assert.equal(order.final_total_cents,100);
+  if(order.status==='PAID'||order.status==='COMPLETED') {
+    await actions.perform(admin,paymentEdit(id,order.revision,receipt.requestId,90));
+  } else {assert.equal(order.status,'CONFIRMED');}
+});
+test('closed corrections require independent admin and preserve refunds even below their totals',async()=>{
+  for(const status of ['COMPLETED','CANCELLED']) {
+    const id=await actionOrder(),receipt=action(id,0,'PAYMENT',100);await actions.perform(actor,receipt);
+    if(status==='COMPLETED') {await actions.perform(actor,action(id,1,'PAID'));await actions.perform(actor,action(id,2,'PICKUP'));}
+    else {await pool.query("UPDATE customer_order SET status='CANCELLED',cancelled_at=now(),cancellation_total_cents=30 WHERE id=$1",[id]);}
+    const revision=(await savedOrder(id)).revision,refund=randomUUID();
+    await pool.query("INSERT INTO refund(id,payment_id,amount_cents,status,created_at) VALUES($1,$2,80,'SUCCEEDED',now())",[refund,receipt.requestId]);
+    await assert.rejects(actions.perform(actor,paymentEdit(id,revision,receipt.requestId,10)),/ORDER_LOCKED/);
+    const adminOnly={uid:'admin-only',token:{admin:true,firebase:{sign_in_provider:'google.com'}}};
+    const cap=status==='CANCELLED'?110:180;
+    await assert.rejects(actions.perform(adminOnly,paymentEdit(id,revision,receipt.requestId,cap+1)),{code:'invalid-argument'});
+    await actions.perform(adminOnly,paymentEdit(id,revision,receipt.requestId,10));
+    await actions.perform(adminOnly,paymentEdit(id,revision+1,receipt.requestId,0));
+    assert.equal((await savedOrder(id)).status,status);
+    assert.equal((await pool.query('SELECT amount_cents FROM refund WHERE id=$1',[refund])).rows[0].amount_cents,80);
+    const financials=(await query('GetOrder',{id})).financials[0];
+    assert.equal(Number(financials.netPaidCents),-80);
+    assert.equal(Number(financials.balanceCents),status==='CANCELLED'?110:180);
+  }
+});
+test('corrections roll back ledger, revision and audit when request persistence fails',async()=>{
+  const id=await actionOrder(),receipt=action(id,0,'PAYMENT',50);await actions.perform(actor,receipt);
+  await pool.query(`CREATE OR REPLACE FUNCTION fail_edit_test() RETURNS trigger LANGUAGE plpgsql AS $$ BEGIN RAISE EXCEPTION 'edit rollback'; END $$;
+    CREATE TRIGGER fail_edit_test BEFORE INSERT ON order_action_request FOR EACH ROW EXECUTE FUNCTION fail_edit_test()`);
+  const edit=paymentEdit(id,1,receipt.requestId,25);
+  try {await assert.rejects(actions.perform(actor,edit),/edit rollback/);}
+  finally {await pool.query('DROP TRIGGER fail_edit_test ON order_action_request; DROP FUNCTION fail_edit_test()');}
+  assert.equal((await savedPayment(receipt.requestId)).amount_cents,50);
+  assert.equal((await savedOrder(id)).revision,1);
+  assert.equal((await pool.query('SELECT count(*)::int n FROM order_audit_event WHERE order_id=$1',[id])).rows[0].n,2);
+  await actions.perform(actor,edit);assert.equal((await savedPayment(receipt.requestId)).amount_cents,25);
+});
+
+test('competing corrections serialize through the loaded parent revision',async()=>{
+  const id=await actionOrder(),receipt=action(id,0,'PAYMENT',60);await actions.perform(actor,receipt);
+  const results=await Promise.allSettled([actions.perform(actor,paymentEdit(id,1,receipt.requestId,50)),
+    actions.perform(actor,paymentEdit(id,1,receipt.requestId,40))]);
+  assert.equal(results.filter(r=>r.status==='fulfilled').length,1);
+  assert.match(results.find(r=>r.status==='rejected').reason.message,/ORDER_CONFLICT/);
+  assert.equal((await savedOrder(id)).revision,2);
+  assert.ok([40,50].includes((await savedPayment(receipt.requestId)).amount_cents));
 });

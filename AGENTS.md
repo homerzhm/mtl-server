@@ -214,3 +214,25 @@ This directory maintains Firebase SQL Connect (`restaurant`), backed by Cloud SQ
   actor and exact canonical payload before current-time/catalog checks; never
   duplicate a payment or convert historical requested deposits.
 - Release the compatible callable before the updated app; deployment is explicit.
+
+
+## Native payment corrections
+
+- `updateStaffOrder` PAYMENT_EDIT accepts paymentId and exact Int32 amountCents
+  including zero, with the same actor/payload request ownership and loaded revision
+  as existing actions. Canonical hashes for PAYMENT/PAID/PICKUP stay unchanged.
+- Staff OR Admin correct successful CASH receipts on CONFIRMED/PAID; only Admin
+  corrects COMPLETED/CANCELLED. Lock the parent before the receipt, increment its
+  revision before ledger mutation and commit receipt/status/audit/request together.
+- Cap a correction at the receipt plus positive saved balance, using cancellation
+  total for cancelled orders and successful receipts minus successful refunds.
+  Zero marks VOIDED, preserving positive amount, identity/timestamps and refund links.
+  Refunds stay unchanged even below their total or after receipt removal: negative
+  net paid is permitted. Do not apply the older void operation's refund prohibition
+  to PAYMENT_EDIT; preserve that older operation's restrictions.
+- Paid left owing returns to Confirmed without changing final total; closed statuses
+  remain unchanged. Append PAYMENT_CORRECTED/PAYMENT_REMOVED structured before/after
+  audits with actor UID. Never replace the original receipt recorder/time.
+- Apply migrations/payment-edits.sql after order-actions.sql and grant only payment
+  UPDATE(amount_cents,status) in addition to existing action grants. Deploy the
+  compatible callable before the iOS release; no deployment is implied by edits.

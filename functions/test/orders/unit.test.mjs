@@ -71,3 +71,16 @@ test('received deposits validate independently without changing legacy canonical
     assert.throws(()=>validateInput({...legacy,depositReceivedCents:amount}),{code:'invalid-argument'});
   assert.throws(()=>validateInput({...legacy,depositRequiredCents:1,depositReceivedCents:1}),{code:'invalid-argument'});
 });
+
+ test('payment edit validation preserves legacy canonical hashes and requires a receipt identity',async()=>{
+  const {validateAction}=await import('../../lib/orders/actions.js');
+  const legacy={requestId:randomUUID(),id:randomUUID(),expectedRevision:3,action:'PAYMENT',amountCents:100};
+  assert.equal(JSON.stringify(validateAction(legacy)),JSON.stringify(legacy));
+  const edit={...legacy,action:'PAYMENT_EDIT',paymentId:randomUUID(),amountCents:0};
+  assert.deepEqual(validateAction(edit),edit);
+  assert.equal(validateAction({...edit,amountCents:2147483647}).amountCents,2147483647);
+  for(const patch of [{paymentId:undefined},{paymentId:null},{paymentId:'bad'},{amountCents:null},
+    {amountCents:-1},{amountCents:1.1},{amountCents:2147483648},{amountCents:'0'}])
+    assert.throws(()=>validateAction({...edit,...patch}),{code:'invalid-argument'});
+  assert.throws(()=>validateAction({...legacy,paymentId:edit.paymentId}),{code:'invalid-argument'});
+});

@@ -378,3 +378,73 @@ restores the exact request after reopening and requires explicit retry; it never
 automatically replays payments. Definite validation/capacity failures clear the
 journal and return an editable draft; uncertain, access and request conflicts keep
 it. Demo keeps independent recovery state in its fixture service.
+
+
+## Native payment corrections
+
+`updateStaffOrder` additionally accepts:
+
+```json
+{"requestId":"<UUID>","id":"<order UUID>","expectedRevision":3,"action":"PAYMENT_EDIT","amountCents":15000,"paymentId":"<receipt UUID>"}
+```
+
+The response remains `{id: <order UUID>}`. Existing actions omit paymentId; their
+canonical hashes are unchanged. Idempotent committed retries check actor/hash
+before current revision/status, including after receipt removal or later actions.
+Staff OR Admin may correct successful CASH receipts on CONFIRMED/PAID. Admin alone
+may correct COMPLETED/CANCELLED. Amounts are exact Int32 cents, from zero to the
+receipt amount plus positive balance due. Balance uses saved final/subtotal less
+discount, or cancellation total for CANCELLED, and successful receipts minus
+successful refunds. Invalid amount is invalid-argument; stale revision is
+ORDER_CONFLICT; invalid receipt/order/status is ORDER_LOCKED.
+
+Positive corrections update the existing amount; zero marks the receipt VOIDED
+while retaining its positive amount, timestamps and all refund links. Native UI
+hides VOIDED receipts. Existing refunds remain unchanged even if they exceed a
+corrected/removed receipt; negative net paid is allowed. No new refund UI or refund
+mutation behavior is included, and legacy RefundCashPayment/VoidCashPayment keep
+their existing checks. A PAID order left owing returns to CONFIRMED and retains
+final_total_cents. Closed statuses never reopen. Parent revision, receipt, status,
+PAYMENT_CORRECTED/PAYMENT_REMOVED audit and request commit atomically. Audits carry
+before/after payment snapshots and status, signed by actor_uid. Original receipt
+recorder and received_at remain intact.
+
+### Release ordering (explicit operator action only)
+
+1. Review/apply `migrations/payment-edits.sql` after `order-actions.sql`; it is
+   repeatable and protects receipt identity and original timestamps. No table or
+   connector changes are required. Preserve all earlier constraints and guards.
+2. With the selected ORDERS runtime database role substituted, grant only:
+
+   ```sql
+   GRANT UPDATE(amount_cents,status) ON payment TO "<ORDERS runtime role>";
+   ```
+
+   Retain existing SELECT/INSERT/action and parent revision/status grants. Do not
+   grant DELETE, identity/timestamp updates, or broad product/client writes.
+3. Deploy only `functions:server:updateStaffOrder` with an explicit project after
+   local validation, then release the app. This documentation does not authorize
+   deployment, live role changes, or live money/status writes.
+
+The iOS journal persists corrections per account/order before transport, freezes
+uncertain/access failures across restarts and retries only on explicit taps.
+Definite validation failures preserve drafts; conflicts require reload and review.
+Run `npm --prefix functions test` and `npm --prefix functions run test:emulators`
+with a native Node 22 runtime and current Firebase CLI. Tests target demo-mtl and
+disposable native PostgreSQL, including actual restricted runtime grants.
+
+### Deployed to dev 2026-11-15
+
+Passed 12 unit tests and 90 emulator/integration tests using native Node 22.
+Applied `migrations/payment-edits.sql` and granted the ORDERS runtime only
+`UPDATE(amount_cents,status)` on payment. Verified all 137 existing database
+constraints and all existing triggers were preserved.
+
+Deployed only `functions:server:updateStaffOrder` to `dev` (`mtl-service-e3e0c`).
+Verified the new function revision is ACTIVE, retains its dedicated ORDERS
+identity, maxInstances 1 and concurrency 2, and rejects anonymous requests with
+401 UNAUTHENTICATED. The other six deployed functions were unchanged. No live
+payment or order status writes were used for verification.
+
+This release targets new managed orders; legacy payment compatibility is outside
+the release scope.
