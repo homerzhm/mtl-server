@@ -31,7 +31,7 @@ aggregate counts remain Int64. Allocations are immutable history.
 
 `createStaffOrder` remains a flat callable in northamerica-northeast1, requiring
 Google sign-in and Boolean Staff OR Admin. Authorize before constructing dependencies.
-All fields below are required; optional form values use explicit null:
+Fields below are required except `depositReceivedCents`; optional form values use explicit null:
 
 ```typescript
 {
@@ -43,7 +43,8 @@ All fields below are required; optional form values use explicit null:
   expectedSettingsRevision: number;
   expectedGroups: Array<{id: string; expectedRevision: number}>;
   allocations: Array<{groupId: string; blockMinute: number; quantity: number}>;
-  depositRequiredCents: number;
+  depositRequiredCents: number; // requested only, retained for legacy callers
+  depositReceivedCents?: number; // cash already received; new callers send this and requested = 0
   notes: string | null;
 }
 ```
@@ -57,7 +58,15 @@ across all groups. Every block must still be future at commit. There is no advan
 horizon or staff override. Contact normalization, Int32 CAD cents, deposit bounds,
 CONFIRMED creation, product/client source locking and collision retries remain.
 
-Response: `{id}`. Items, snapshots, allocations, request and audit save atomically.
+A positive `depositReceivedCents` creates one SUCCEEDED CASH payment using server
+time and a PAYMENT_RECEIVED audit event with the actor UID. It cannot exceed the
+subtotal; blank/zero UI values send zero and create no receipt. Both deposit fields
+cannot be positive. The order stays CONFIRMED, with no finalized total, even when
+fully covered. Increment the parent revision before inserting the receipt. Existing
+requested deposits and older clients create no payment; omitted new fields remain
+omitted during canonicalization to preserve stored legacy payload hashes.
+
+Response: `{id}`. Items, snapshots, allocations, optional receipt, request and audit save atomically.
 Canonical hashing sorts item IDs, expected group IDs, and group/block allocations.
 UUIDs are lowercase. Keep request/item UUIDs and the exact payload across uncertain
 retries. Matching committed requests reconcile before checking current time,
@@ -354,3 +363,18 @@ concurrency two. The new callable uses Node 22 and a 60-second timeout and rejec
 anonymous calls. Existing counts remained three orders, three items, two roast
 allocations and three creation requests. No cloud fixtures, live payments or
 lifecycle changes were made for verification.
+
+## Creation deposits release prerequisite (local change)
+
+Deploy the compatible `createStaffOrder` before releasing the new iPhone form.
+It uses the existing payment/audit tables, native payment guards and ORDERS runtime
+SELECT/INSERT on payment plus UPDATE on order revision/updated_at. No schema
+backfill or historical payment conversion is required. Existing requests retain
+their canonical hash and requested-deposit semantics. This section documents local
+code changes, not a cloud deployment.
+
+iPhone submissions are journaled per approved account before transport. New order
+restores the exact request after reopening and requires explicit retry; it never
+automatically replays payments. Definite validation/capacity failures clear the
+journal and return an editable draft; uncertain, access and request conflicts keep
+it. Demo keeps independent recovery state in its fixture service.

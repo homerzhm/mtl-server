@@ -199,3 +199,18 @@ This directory maintains Firebase SQL Connect (`restaurant`), backed by Cloud SQ
 - iOS journals unresolved requests per account/order for explicit retries across
   restarts. Never auto-replay a payment or replace an uncertain request identity.
 - No cloud deployment or live payment/status writes are implied by edits.
+
+## Creation cash deposits
+
+- `createStaffOrder` optionally accepts `depositReceivedCents`, bounded to the
+  subtotal, and atomically inserts a SUCCEEDED CASH receipt plus PAYMENT_RECEIVED
+  audit with server actor/time. Zero/absence inserts no receipt. Keep CONFIRMED
+  until explicit Paid, even for a full deposit. Increment the parent revision
+  before inserting the receipt, using the existing ledger safeguards/grants.
+- Retain `depositRequiredCents` as requested-only for old callers and historical
+  rows. Reject both amounts positive. Omit absent received amounts from canonical
+  normalization so stored legacy hashes continue to reconcile unchanged.
+- All creation rows, receipt, audit and request commit together. Retries match
+  actor and exact canonical payload before current-time/catalog checks; never
+  duplicate a payment or convert historical requested deposits.
+- Release the compatible callable before the updated app; deployment is explicit.

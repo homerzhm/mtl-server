@@ -55,3 +55,19 @@ test('group allocations canonicalize identities and reject duplicate slots and g
   assert.throws(()=>validateInput({...v,expectedGroups:[...v.expectedGroups,v.expectedGroups[0]]}),{code:'invalid-argument'});
   assert.throws(()=>validateInput({...v,expectedSettingsRevision:-1}),{code:'invalid-argument'});
 });
+
+test('received deposits validate independently without changing legacy canonical payloads',()=>{
+  const legacy=input(), canonical=validateInput(legacy);
+  assert.equal(Object.hasOwn(canonical,'depositReceivedCents'),false);
+  // This is the pre-update normalization order used to hash persisted creation requests.
+  const expected={id:legacy.id,items:legacy.items,clientId:null,contactPhoneNumber:null,
+    scheduledFor:legacy.scheduledFor,allocations:legacy.allocations,expectedSettingsRevision:0,
+    expectedGroups:legacy.expectedGroups,depositRequiredCents:0,notes:null};
+  assert.equal(JSON.stringify(canonical),JSON.stringify(expected));
+  assert.equal(validateInput({...legacy,depositReceivedCents:0}).depositReceivedCents,0);
+  assert.equal(validateInput({...legacy,depositReceivedCents:1025}).depositReceivedCents,1025);
+  assert.equal(validateInput({...legacy,depositRequiredCents:100}).depositRequiredCents,100);
+  for(const amount of [-1,0.1,2147483648,'100',null,undefined])
+    assert.throws(()=>validateInput({...legacy,depositReceivedCents:amount}),{code:'invalid-argument'});
+  assert.throws(()=>validateInput({...legacy,depositRequiredCents:1,depositReceivedCents:1}),{code:'invalid-argument'});
+});

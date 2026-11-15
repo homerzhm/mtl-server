@@ -38,7 +38,7 @@ export class OrderCreationService {
         subtotal+=p.price_cents*item.quantity;
         if(p.capacity_group_id) required.set(p.capacity_group_id,(required.get(p.capacity_group_id)??0)+item.quantity);
       }
-      if(!Number.isSafeInteger(subtotal)||subtotal<0||subtotal>2147483647||input.depositRequiredCents>subtotal) throw new HttpsError('invalid-argument','Check items, allocation and deposit');
+      if(!Number.isSafeInteger(subtotal)||subtotal<0||subtotal>2147483647||input.depositRequiredCents>subtotal||(input.depositReceivedCents??0)>subtotal) throw new HttpsError('invalid-argument','Check items, allocation and deposit');
       if(input.clientId) {
         const client=await db.query('SELECT id FROM client WHERE id=$1',[input.clientId]);
         if(!client.rowCount) throw new HttpsError('failed-precondition','CLIENT_UNAVAILABLE');
@@ -78,6 +78,20 @@ export class OrderCreationService {
       await db.query('INSERT INTO order_creation_request(id,actor_uid,payload_hash) VALUES($1,$2,$3)',[input.id,actor.uid,hash]);
       await db.query(`INSERT INTO order_audit_event(id,order_id,action,actor_uid,occurred_at,order_revision,changes)
         VALUES($1,$2,'ORDER_CREATED',$3,now(),0,$4::jsonb)`,[randomUUID(),input.id,actor.uid,JSON.stringify({before:null,after:{...input,subtotalCents:subtotal,status:'CONFIRMED'}})]);
+      if ((input.depositReceivedCents??0)>0) {
+        // The parent is new and exclusively owned by this transaction. Keep the same
+        // revision-before-ledger invariant as updateStaffOrder.
+        await db.query('UPDATE customer_order SET revision=1,updated_at=now() WHERE id=$1',[input.id]);
+        const receipt=await db.query(`INSERT INTO payment(id,order_id,amount_cents,method,status,received_at,created_at)
+          VALUES($1,$2,$3,'CASH','SUCCEEDED',now(),now()) RETURNING id,amount_cents,received_at`,
+          [randomUUID(),input.id,input.depositReceivedCents]);
+        const saved=receipt.rows[0];
+        await db.query(`INSERT INTO order_audit_event(id,order_id,action,actor_uid,occurred_at,order_revision,changes)
+          VALUES($1,$2,'PAYMENT_RECEIVED',$3,now(),1,$4::jsonb)`,[randomUUID(),input.id,actor.uid,
+          JSON.stringify({before:{status:'CONFIRMED',finalTotalCents:null,completedAt:null},
+            after:{status:'CONFIRMED',finalTotalCents:null,completedAt:null,
+              payment:{id:saved.id,amountCents:saved.amount_cents,receivedAt:saved.received_at.toISOString()}}})]);
+      }
       // Time can advance while waiting for a lock; validate again before commit.
       validateTiming(input,this.now());
       await db.query('COMMIT');return {id:input.id};

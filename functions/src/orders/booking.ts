@@ -5,7 +5,7 @@ export type CreateInput = {
   id: string; items: {id:string; productId:string; expectedRevision:number; quantity:number}[];
   clientId: string | null; contactPhoneNumber: string | null; scheduledFor: string;
   expectedSettingsRevision: number; expectedGroups: {id:string; expectedRevision:number}[];
-  allocations: {groupId:string; blockMinute:number; quantity:number}[]; depositRequiredCents:number; notes:string | null;
+  allocations: {groupId:string; blockMinute:number; quantity:number}[]; depositRequiredCents:number; notes:string | null; depositReceivedCents?:number;
 };
 export const uuid = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 export const integer = (v:unknown, min=0, max=2147483647): v is number => Number.isInteger(v) && Number(v)>=min && Number(v)<=max;
@@ -19,12 +19,14 @@ export function localParts(date:Date) {
 export function validateInput(value:unknown): CreateInput {
   if(!value || typeof value!=='object'||Array.isArray(value)) invalid();
   const v=value as CreateInput;
-  keys(v,['id','items','clientId','contactPhoneNumber','scheduledFor','allocations','expectedSettingsRevision','expectedGroups','depositRequiredCents','notes']);
+  keys(v,['id','items','clientId','contactPhoneNumber','scheduledFor','allocations','expectedSettingsRevision','expectedGroups','depositRequiredCents','notes','depositReceivedCents']);
   if(typeof v.id!=='string'||!uuid.test(v.id)||!Array.isArray(v.items)||!v.items.length||v.items.length>100||
     !Array.isArray(v.allocations)||v.allocations.length>9600||!integer(v.expectedSettingsRevision)||!Array.isArray(v.expectedGroups)||v.expectedGroups.length>100||!integer(v.depositRequiredCents)||
     (v.clientId!==null&&(typeof v.clientId!=='string'||!uuid.test(v.clientId)))||
     (v.notes!==null&&(typeof v.notes!=='string'||v.notes.length>10000))||
     typeof v.scheduledFor!=='string'||!/^\d{4}-\d\d-\d\dT\d\d:\d\d:\d\d(?:\.\d{3})?Z$/.test(v.scheduledFor)||!Number.isFinite(Date.parse(v.scheduledFor))) invalid();
+  const hasReceived = Object.prototype.hasOwnProperty.call(v,'depositReceivedCents');
+  if(hasReceived && (!integer(v.depositReceivedCents) || (v.depositRequiredCents>0 && (v.depositReceivedCents??0)>0))) invalid();
   if(new Date(v.scheduledFor).toISOString().replace('.000Z','Z')!==v.scheduledFor.replace('.000Z','Z')) invalid();
   let phone=v.contactPhoneNumber;
   if(phone!==null) {
@@ -58,7 +60,9 @@ export function validateInput(value:unknown): CreateInput {
     slots.add(slot);return {groupId,blockMinute:a.blockMinute,quantity:a.quantity};
   }).sort((a,b)=>a.groupId.localeCompare(b.groupId)||a.blockMinute-b.blockMinute);
   return {id:v.id.toLowerCase(),items,clientId:v.clientId?.toLowerCase()??null,contactPhoneNumber:phone,
-    scheduledFor:new Date(v.scheduledFor).toISOString(),allocations,expectedSettingsRevision:v.expectedSettingsRevision,expectedGroups,depositRequiredCents:v.depositRequiredCents,notes:v.notes};
+    scheduledFor:new Date(v.scheduledFor).toISOString(),allocations,expectedSettingsRevision:v.expectedSettingsRevision,expectedGroups,depositRequiredCents:v.depositRequiredCents,notes:v.notes,
+    // Omit absent fields, preserving the exact canonical JSON/hash of legacy retries.
+    ...(hasReceived ? {depositReceivedCents:v.depositReceivedCents} : {})};
 }
 export function validateTiming(input:CreateInput, now:Date) {
   const pickup=new Date(input.scheduledFor), p=localParts(pickup), n=localParts(now);

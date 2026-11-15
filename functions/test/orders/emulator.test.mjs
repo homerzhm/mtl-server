@@ -51,6 +51,57 @@ test('atomic creation, summaries, idempotent retry and payload ownership',async(
   await assert.rejects(pool.query('UPDATE order_item SET quantity=2 WHERE order_id=$1',[v.id]),/ALLOCATION_AWARE_EDIT_REQUIRED/);
   await pool.query("UPDATE customer_order SET status='CANCELLED',cancelled_at=now(),cancellation_total_cents=0 WHERE id=$1",[v.id]);
 });
+test('creation deposits are atomic cash receipts with summaries, audit and safe retries',async()=>{
+  const addon=randomUUID(),client=randomUUID(),phone='+63'+String(BigInt('0x'+randomUUID().replaceAll('-','').slice(0,9)));
+  await pool.query("INSERT INTO product(id,name,price_cents,is_active,revision,created_at) VALUES($1,'Deposit test',1000,true,0,now())",[addon]);
+  await pool.query("INSERT INTO client(id,phone_number,revision,created_at) VALUES($1,$2,0,now())",[client,phone]);
+  for(const cents of [0,250,1000]) {
+    const v=input();v.items[0].productId=addon;v.allocations=[];v.expectedGroups=[];
+    v.clientId=client;v.contactPhoneNumber=phone;v.depositReceivedCents=cents;
+    const results=await Promise.all([service.create(actor,v),service.create(actor,v)]);
+    assert.deepEqual(results,[{id:v.id},{id:v.id}]);
+    // A lost response reconciles to the original receipt, even once pickup has elapsed.
+    assert.deepEqual(await new OrderCreationService(pool,()=>new Date('2040-01-01')).create(actor,v),{id:v.id});
+    const saved=(await pool.query('SELECT * FROM customer_order WHERE id=$1',[v.id])).rows[0];
+    assert.equal(saved.status,'CONFIRMED');assert.equal(saved.final_total_cents,null);
+    assert.equal(saved.deposit_required_cents,0);assert.equal(saved.revision,cents?1:0);
+    const payments=(await pool.query('SELECT * FROM payment WHERE order_id=$1',[v.id])).rows;
+    assert.equal(payments.length,cents?1:0);
+    if(cents) {
+      assert.equal(payments[0].method,'CASH');assert.equal(payments[0].status,'SUCCEEDED');
+      assert.equal(payments[0].amount_cents,cents);assert.ok(payments[0].received_at);
+      const event=(await pool.query("SELECT * FROM order_audit_event WHERE order_id=$1 AND action='PAYMENT_RECEIVED'",[v.id])).rows[0];
+      assert.equal(event.actor_uid,actor.uid);assert.equal(event.order_revision,1);
+      assert.equal(event.changes.after.payment.id,payments[0].id);
+    }
+    const summary=(await query('FindStaffOrderByNumber',{number:saved.order_number})).staffOrderSummaries[0];
+    assert.equal(Number(summary.netPaidCents),cents);assert.equal(Number(summary.balanceCents),1000-cents);
+    await assert.rejects(service.create(actor,{...v,depositReceivedCents:cents+1}),{code:'already-exists'});
+    await assert.rejects(service.create({...actor,uid:'another'},v),{code:'already-exists'});
+  }
+  const summary=(await query('GetClientSummary',{id:client})).clientDirectoryEntries[0];
+  assert.equal(Number(summary.netPaidCents),1250);assert.equal(Number(summary.orderCount),3);
+  const legacy=input();legacy.items[0].productId=addon;legacy.allocations=[];legacy.expectedGroups=[];legacy.depositRequiredCents=300;
+  await service.create(actor,legacy);await service.create(actor,legacy);
+  assert.equal((await pool.query('SELECT deposit_required_cents FROM customer_order WHERE id=$1',[legacy.id])).rows[0].deposit_required_cents,300);
+  assert.equal((await pool.query('SELECT count(*)::int n FROM payment WHERE order_id=$1',[legacy.id])).rows[0].n,0);
+  const excessive={...legacy,id:randomUUID(),items:[{...legacy.items[0],id:randomUUID()}],depositRequiredCents:0,depositReceivedCents:1001};
+  await assert.rejects(service.create(actor,excessive),{code:'invalid-argument'});
+  assert.equal((await pool.query('SELECT count(*)::int n FROM customer_order WHERE id=$1',[excessive.id])).rows[0].n,0);
+});
+
+test('failure after receipt insertion rolls back order, booking, payment, audit and request',async()=>{
+  let calls=0;
+  const failing=new OrderCreationService(pool,()=>++calls===1?new Date('2030-01-01'):new Date('2040-01-01'));
+  const v=input();v.scheduledFor='2030-06-11T18:00:00.000Z';v.depositReceivedCents=50;
+  await assert.rejects(failing.create(actor,v),/PICKUP_EXPIRED/);
+  for(const [table,key] of [['customer_order','id'],['order_item','order_id'],['order_capacity_allocation','order_id'],
+    ['payment','order_id'],['order_audit_event','order_id'],['order_creation_request','id']])
+    assert.equal((await pool.query(`SELECT count(*)::int n FROM ${table} WHERE ${key}=$1`,[v.id])).rows[0].n,0,table);
+  await service.create(actor,v);
+  assert.equal((await pool.query('SELECT count(*)::int n FROM payment WHERE order_id=$1',[v.id])).rows[0].n,1);
+});
+
 test('competing creations cannot both take the last roast place; cancellation and reopen share protection',async()=>{
   const first=input(17);await service.create(actor,first);
   const a=input(),b=input();const results=await Promise.allSettled([service.create(actor,a),service.create(actor,b)]);
@@ -100,7 +151,7 @@ test('overflow, deposit and non-lechon allocation validation leave no order',asy
   }
 });
 test('real callable authorizes staff and rejects unauthenticated creation',async()=>{
-  const v=input();v.scheduledFor='2030-06-08T18:00:00.000Z';
+  const v=input();v.scheduledFor='2030-06-08T18:00:00.000Z';v.depositReceivedCents=50;
   const token=`${encode({alg:'none'})}.${encode({sub:actor.uid,aud:'demo-mtl',iss:'https://securetoken.google.com/demo-mtl',staff:true,firebase:{sign_in_provider:'google.com'},iat:Math.floor(Date.now()/1000),exp:Math.floor(Date.now()/1000)+3600})}.`;
   const call=async auth=>{
     const response=await fetch('http://127.0.0.1:5001/demo-mtl/northamerica-northeast1/createStaffOrder',{method:'POST',headers:{'Content-Type':'application/json',...(auth?{Authorization:`Bearer ${token}`}:{})},body:JSON.stringify({data:v})});return response.json();
@@ -108,6 +159,7 @@ test('real callable authorizes staff and rejects unauthenticated creation',async
   assert.equal((await call(false)).error.status,'UNAUTHENTICATED');
   const saved=await call(true);assert.equal(saved.result?.id,v.id,JSON.stringify(saved));
   assert.deepEqual(await call(true),saved);
+  assert.equal((await pool.query('SELECT amount_cents FROM payment WHERE order_id=$1',[v.id])).rows[0].amount_cents,50);
 });
 
 test('unallocated legacy lechon creation and reopening remain blocked without an activation gate',async()=>{
@@ -159,6 +211,15 @@ test('dedicated runtime creates with SELECT/INSERT and helper EXECUTE only',asyn
     const runtime=new OrderCreationService(restricted,()=>new Date('2030-01-01'));
     assert.deepEqual(await runtime.create(actor,v),{id:v.id});
     assert.deepEqual(await runtime.create(actor,v),{id:v.id});
+    // New received deposits use the existing action runtime's additive grants.
+    await pool.query('GRANT SELECT ON payment TO orders_runtime_test');
+    await pool.query('GRANT INSERT ON payment TO orders_runtime_test');
+    await pool.query('GRANT UPDATE(revision,updated_at) ON customer_order TO orders_runtime_test');
+    const deposit=input();deposit.scheduledFor='2030-06-12T18:00:00.000Z';deposit.depositReceivedCents=50;
+    assert.deepEqual(await runtime.create(actor,deposit),{id:deposit.id});
+    assert.deepEqual(await runtime.create(actor,deposit),{id:deposit.id});
+    assert.equal((await pool.query('SELECT amount_cents FROM payment WHERE order_id=$1',[deposit.id])).rows[0].amount_cents,50);
+    await assert.rejects(restricted.query('UPDATE product SET name=name'),/permission denied/);
   } finally {
     await restricted.end();
     await pool.query('DROP OWNED BY orders_runtime_test');
