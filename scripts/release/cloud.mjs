@@ -1,7 +1,7 @@
 import {createRequire} from 'node:module';
 import {readdir, readFile} from 'node:fs/promises';
 import {join} from 'node:path';
-import {root, functions, region, digest, stableJson} from './config.mjs';
+import {root, functions, digest, stableJson} from './config.mjs';
 const require=createRequire(`${root}/functions/package.json`);
 export async function googleGet(url) {
   const {GoogleAuth}=require('google-auth-library');
@@ -18,14 +18,15 @@ function assertSources(actual,expected,label) {
   if(JSON.stringify(normalize(actual))!==JSON.stringify(normalize(expected))) throw new Error(`Deployed ${label} sources differ from checkout`);
 }
 export async function verifyCloud(t,parameters,component='all',get=googleGet) {
-  const base=`projects/${t.project}/locations/${region}`;
+  const base=`projects/${t.project}/locations/${t.region}`;
+  const functionsBase=`projects/${t.project}/locations/${t.functionsRegion}`;
   const result={};
   if(component==='all'||component==='schema') {
     const schema=await get(`https://firebasedataconnect.googleapis.com/v1/${base}/services/restaurant/schemas/main`);
     assertSources(schema.source?.files,await sources('dataconnect/schema'),'schema');
     const sql=schema.datasources?.[0]?.postgresql;
     // REST resource shape uses database and cloudSql.instance.
-    if(sql?.database!=='restaurant' || sql?.cloudSql?.instance!==`projects/${t.project}/locations/${region}/instances/${t.instance}` || sql?.schemaValidation!=='COMPATIBLE') throw new Error('Deployed SQL Connect datasource differs from target');
+    if(sql?.database!=='restaurant' || sql?.cloudSql?.instance!==`projects/${t.project}/locations/${t.region}/instances/${t.instance}` || sql?.schemaValidation!=='COMPATIBLE') throw new Error('Deployed SQL Connect datasource differs from target');
     result.schema={name:schema.name,source:{files:[...schema.source.files].sort((a,b)=>a.path.localeCompare(b.path))},datasources:schema.datasources};
   }
   if(component==='all'||component==='connector') {
@@ -37,7 +38,7 @@ export async function verifyCloud(t,parameters,component='all',get=googleGet) {
     const deployed=[];
     let pageToken;
     do {
-      const page=await get(`https://cloudfunctions.googleapis.com/v2/${base}/functions${pageToken?`?pageToken=${encodeURIComponent(pageToken)}`:''}`);
+      const page=await get(`https://cloudfunctions.googleapis.com/v2/${functionsBase}/functions${pageToken?`?pageToken=${encodeURIComponent(pageToken)}`:''}`);
       deployed.push(...(page.functions??[]));pageToken=page.nextPageToken;
     } while(pageToken);
     const ours=deployed.filter(f=>f.labels?.['firebase-functions-codebase']==='server');
@@ -51,14 +52,14 @@ export async function verifyCloud(t,parameters,component='all',get=googleGet) {
       for(const suffix of ['SQL_INSTANCE','SQL_USER','SQL_DATABASE']) if(env[`${topic}_${suffix}`]!==parameters[`${topic}_${suffix}`]) throw new Error(`Function database parameters differ: ${name}`);
       if(Object.keys(env).some(k=>k.includes('EMULATOR')||k.endsWith('LOCAL_DATABASE_URL'))) throw new Error(`Emulator settings deployed: ${name}`);
     }
-    const job=await get(`https://cloudscheduler.googleapis.com/v1/${base}/jobs/firebase-schedule-reconcileStaffRoles-${region}`);
+    const job=await get(`https://cloudscheduler.googleapis.com/v1/${functionsBase}/jobs/firebase-schedule-reconcileStaffRoles-${t.functionsRegion}`);
     if(job.state!=='ENABLED'||!['* * * * *','every 1 minutes'].includes(job.schedule)||job.httpTarget?.uri?.replace(/\/$/,'')!==ours.find(f=>f.name.endsWith('/reconcileStaffRoles'))?.serviceConfig?.uri?.replace(/\/$/,'')) throw new Error('Staff reconciliation scheduler differs');
     result.functions=ours.sort((a,b)=>a.name.localeCompare(b.name)).map(f=>({name:f.name,updateTime:f.updateTime,buildConfig:f.buildConfig,serviceConfig:f.serviceConfig}));
     result.scheduler={name:job.name,state:job.state,schedule:job.schedule,timeZone:job.timeZone,httpTarget:job.httpTarget,retryConfig:job.retryConfig};
   }
   if(component==='all') {
     const instance=await get(`https://sqladmin.googleapis.com/sql/v1beta4/projects/${t.project}/instances/${t.instance}`);
-    if(instance.connectionName!==t.connection||instance.region!==region||instance.state!=='RUNNABLE'||!instance.databaseVersion?.startsWith('POSTGRES_')||
+    if(instance.connectionName!==t.connection||instance.region!==t.region||instance.state!=='RUNNABLE'||!instance.databaseVersion?.startsWith('POSTGRES_')||
       !instance.settings?.databaseFlags?.some(f=>f.name==='cloudsql.iam_authentication'&&f.value==='on')) throw new Error('Cloud SQL target/IAM configuration differs');
     if(t.name==='production' && (!instance.settings.backupConfiguration?.enabled||!instance.settings.backupConfiguration?.pointInTimeRecoveryEnabled)) throw new Error('Production backups and point-in-time recovery required');
     result.instance={connection:instance.connectionName,version:instance.databaseVersion,flags:[...instance.settings.databaseFlags].sort((a,b)=>a.name.localeCompare(b.name))};

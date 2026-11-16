@@ -11,7 +11,7 @@ test('default target is dev and command always has explicit project/config',asyn
   const t=await target(options([]).environment);
   assert.equal(t.project,'mtl-service-e3e0c');
   assert.deepEqual(firebaseArgs(t,'config.json','deploy',['--only','functions:server']),['deploy','--project','mtl-service-e3e0c','--config','config.json','--only','functions:server']);
-  const prod=await target(options(['--environment','production']).environment);assert.equal(prod.project,'mtl-service-production');
+  const prod=await target(options(['--environment','production']).environment);assert.equal(prod.project,'mtl-service-production');assert.equal(prod.region,'northamerica-northeast2');assert.equal(prod.functionsRegion,'northamerica-northeast1');
   assert.throws(()=>options(['--project','production']));assert.throws(()=>options(['--environment','prod']));assert.throws(()=>options(['--config','evil.json']));
 });
 test('generated environment configurations share all sources and function settings',async()=>{
@@ -20,8 +20,8 @@ test('generated environment configurations share all sources and function settin
   assert.deepEqual(d.functions,p.functions);assert.deepEqual(d.functions,(await json(join(root,'firebase.json'))).functions);
   const dy=await readFile(join(d.dataconnect.source,'dataconnect.yaml'),'utf8');
   const py=await readFile(join(p.dataconnect.source,'dataconnect.yaml'),'utf8');
-  assert.equal(dy.replace(dev.instance,'INSTANCE'),py.replace(prod.instance,'INSTANCE'));
-  assert.match(py,/schemaValidation: COMPATIBLE/);
+  assert.equal(dy.replace(dev.instance,'INSTANCE').replace(dev.region,'REGION'),py.replace(prod.instance,'INSTANCE').replace(prod.region,'REGION'));
+  assert.match(py,/schemaValidation: COMPATIBLE/);assert.match(py,/location: northamerica-northeast2/);
   const {readdir}=await import('node:fs/promises');
   for(const name of ['schema','staff-admin']) {
     const originals=(await readdir(join(root,'dataconnect',name))).filter(f=>/\.(gql|graphql)$/.test(f)||f==='connector.yaml').sort();
@@ -99,16 +99,16 @@ test('full cloud verification checks identities, scheduler and backups without f
   const connector={source:{files:await files('dataconnect/staff-admin')}};
   const functionResources=functionNames.map(name=>{
     const staff=['registerStaffSignIn','setStaffRoles','reconcileStaffRoles'].includes(name),topic=staff?'STAFF':'ORDERS';
-    return {name:`projects/${t.project}/locations/${t.region}/functions/${name}`,labels:{'firebase-functions-codebase':'server'},state:'ACTIVE',updateTime:'2026-11-16T00:00:00Z',buildConfig:{runtime:'nodejs22'},
+    return {name:`projects/${t.project}/locations/${t.functionsRegion}/functions/${name}`,labels:{'firebase-functions-codebase':'server'},state:'ACTIVE',updateTime:'2026-11-16T00:00:00Z',buildConfig:{runtime:'nodejs22'},
       serviceConfig:{uri:`https://${name.toLowerCase()}-example.run.app`,serviceAccountEmail:p[`${topic}_RUNTIME_SERVICE_ACCOUNT`],maxInstanceCount:1,maxInstanceRequestConcurrency:2,timeoutSeconds:staff?120:60,
         environmentVariables:Object.fromEntries(['SQL_INSTANCE','SQL_USER','SQL_DATABASE'].map(suffix=>[`${topic}_${suffix}`,p[`${topic}_${suffix}`]]))}};
   });
   let attempts=0;
   const instance={connectionName:t.connection,region:t.region,state:'RUNNABLE',databaseVersion:'POSTGRES_18',settings:{databaseFlags:[{name:'cloudsql.iam_authentication',value:'on'}],backupConfiguration:{enabled:true,pointInTimeRecoveryEnabled:true}}};
   const get=async url=>{
-    if(url.endsWith('/schemas/main'))return schema;
+    if(url.endsWith('/schemas/main')){assert.ok(url.includes('/locations/northamerica-northeast2/'));return schema;}
     if(url.endsWith('/connectors/staff-admin'))return connector;
-    if(url.endsWith('/functions'))return {functions:functionResources};
+    if(url.endsWith('/functions')){assert.ok(url.includes('/locations/northamerica-northeast1/'));return {functions:functionResources};}
     if(url.includes('cloudscheduler'))return {name:'scheduler',state:'ENABLED',schedule:'every 1 minutes',lastAttemptTime:`run-${++attempts}`,httpTarget:{uri:'https://reconcilestaffroles-example.run.app/'}};
     if(url.includes('sqladmin'))return instance;
     assert.fail(url);

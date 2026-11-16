@@ -22,7 +22,11 @@ Use native Node 22, npm and a current Firebase CLI. Install locked dependencies 
 4. From the same clean commit, run
    `npm run deploy -- --environment production`.
 
-Production is `mtl-service-production`. No code, schema or connector copies are
+Production is `mtl-service-production`. Its database and SQL Connect service are
+in Toronto (`northamerica-northeast2`); dev stays in Montréal
+(`northamerica-northeast1`). Functions and their scheduler keep the existing
+`northamerica-northeast1` endpoint region in both projects. The Cloud SQL connector
+uses the database region in each environment’s instance connection name. No code, schema or connector copies are
 maintained. The generated `.firebase-release-<environment>-<pid>.json` and ignored
 `.firebase/releases/<environment>-<pid>/dataconnect.yaml` select each SQL instance while
 using disposable snapshots of the original schema and connector directories.
@@ -50,11 +54,11 @@ Create ignored `functions/.env.mtl-service-e3e0c` and
 `functions/.env.mtl-service-production`, with exactly these eight parameters:
 
 ```dotenv
-STAFF_SQL_INSTANCE=mtl-service-production:northamerica-northeast1:mtl-restaurant-production
+STAFF_SQL_INSTANCE=mtl-service-production:northamerica-northeast2:mtl-restaurant-production
 STAFF_SQL_DATABASE=restaurant
 STAFF_RUNTIME_SERVICE_ACCOUNT=mtl-staff-functions@mtl-service-production.iam.gserviceaccount.com
 STAFF_SQL_USER=mtl-staff-functions@mtl-service-production.iam
-ORDERS_SQL_INSTANCE=mtl-service-production:northamerica-northeast1:mtl-restaurant-production
+ORDERS_SQL_INSTANCE=mtl-service-production:northamerica-northeast2:mtl-restaurant-production
 ORDERS_SQL_DATABASE=restaurant
 ORDERS_RUNTIME_SERVICE_ACCOUNT=mtl-orders-functions@mtl-service-production.iam.gserviceaccount.com
 ORDERS_SQL_USER=mtl-orders-functions@mtl-service-production.iam
@@ -202,7 +206,9 @@ Do this only after an explicit cloud setup/deployment request.
    IAM and network access, not just the Firebase console project settings.
 3. Enable Google Auth, register production iOS and its sign-in configuration.
    Keep app configuration separate from dev. No dev Auth identities, claims or
-   business data are imported. The iOS target/configuration change is separate.
+   business data are imported. The iOS target/configuration change is separate. Its production SQL Connect
+   connector must explicitly use `northamerica-northeast2`; changing only the
+   Firebase project plist does not change the generated dev connector location.
 4. Create dedicated Staff and Orders runtime identities and IAM database users.
    Apply the exact current topic grants in staff-management/live-order-booking,
    including subsequent action/payment/edit grants. Staff alone needs Auth

@@ -98,7 +98,7 @@ export async function main(args=process.argv.slice(2)) {
     console.log(await firebaseConfig(t));return;
   }
   const commit=opts['dry-run']?await run('git',['rev-parse','HEAD'],{capture:true}):await cleanCommit();
-  console.log(JSON.stringify({command,environment:t.name,project:t.project,instance:t.connection,commit,manifest:m.checksum,components:m.components,migrations:m.migrations.map(x=>({id:x.id,mode:x.mode,checksum:migrationChecksum(x)}))},null,2));
+  console.log(JSON.stringify({command,environment:t.name,project:t.project,instance:t.connection,sqlRegion:t.region,functionsRegion:t.functionsRegion,commit,manifest:m.checksum,components:m.components,migrations:m.migrations.map(x=>({id:x.id,mode:x.mode,checksum:migrationChecksum(x)}))},null,2));
   if(opts['dry-run']) {console.log('Preview only: no cloud connection or deployment. Runtime parameters and remote baseline are checked during execution.');return;}
   if(Object.keys(process.env).some(k=>k.includes('EMULATOR')||k==='FIREBASE_DATACONNECT_POSTGRESQL_STRING')) throw new Error('Release commands cannot run with emulator overrides');
   const parameters=await readParameters(t);

@@ -23,8 +23,8 @@ export function options(args) {
 export async function target(name) {
   const environments = await json(join(root,'release/environments.json'));
   const t = environments[name];
-  if (!t || t.project !== (name === 'dev' ? 'mtl-service-e3e0c' : 'mtl-service-production') || !/^[a-z][a-z0-9-]+$/.test(t.instance)) throw new Error('Invalid environment mapping');
-  return {...t, name, region, connection:`${t.project}:${region}:${t.instance}`};
+  if (!t || t.project !== (name === 'dev' ? 'mtl-service-e3e0c' : 'mtl-service-production') || !/^[a-z][a-z0-9-]+$/.test(t.instance) || !['northamerica-northeast1','northamerica-northeast2'].includes(t.region)) throw new Error('Invalid environment mapping');
+  return {...t, name, functionsRegion:region, connection:`${t.project}:${t.region}:${t.instance}`};
 }
 export function safePath(path) {
   if (typeof path !== 'string' || !path || path.includes('\\')) throw new Error('Invalid repository path');
@@ -104,7 +104,7 @@ export async function firebaseConfig(t) {
       if(/\.(gql|graphql)$/.test(file)||file==='connector.yaml') await copyFile(join(source,file),join(destination,file));
     }
   }
-  const yaml = original.replace(/instanceId: [^\n]+/,`instanceId: ${t.instance}`);
+  const yaml = original.replace(/instanceId: [^\n]+/,`instanceId: ${t.instance}`).replace(/location: [^\n]+/,`location: ${t.region}`);
   await writeFile(join(directory,'dataconnect.yaml'),yaml);
   const config = join(root,`.firebase-release-${t.name}-${process.pid}.json`);
   await writeFile(config,JSON.stringify({...base, dataconnect:{source:directory}},null,2)+'\n');

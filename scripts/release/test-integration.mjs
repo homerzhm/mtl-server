@@ -22,7 +22,7 @@ try {
   const command=capture?'node scripts/release/capture-contract.mjs':'node --test --test-concurrency=1 test/release/integration.test.mjs';
   const args=['emulators:exec','--project','demo-mtl','--config',config,'--only','dataconnect',command];
   const env={...process.env,GCLOUD_PROJECT:'demo-mtl',GOOGLE_CLOUD_PROJECT:'demo-mtl',FIREBASE_DATACONNECT_POSTGRESQL_STRING:url,
-    MTL_RELEASE_TEST_DATABASE_URL:url,CI:'true',FIREBASE_CLI_DISABLE_UPDATE_CHECK:'true'};
+    MTL_RELEASE_TEST_DATABASE_URL:url,MTL_RELEASE_TEST_SQL_REGION:'northamerica-northeast2',CI:'true',FIREBASE_CLI_DISABLE_UPDATE_CHECK:'true'};
   await run(process.env.MTL_FIREBASE_CLI?process.execPath:'firebase',process.env.MTL_FIREBASE_CLI?[process.env.MTL_FIREBASE_CLI,...args]:args,{env});
 } finally {
   if(started) await pg.stop();

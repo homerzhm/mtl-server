@@ -7,7 +7,8 @@ export async function fixture() {
   if(process.env.GCLOUD_PROJECT!=='demo-mtl'||process.env.MTL_RELEASE_TEST_DATABASE_URL!=='postgresql://postgres:test-only@127.0.0.1:15433/restaurant?sslmode=disable') throw new Error('Release integration tests require isolated local runner');
   const encode=v=>Buffer.from(JSON.stringify(v)).toString('base64url');
   const token=`${encode({alg:'none'})}.${encode({sub:'release-test',aud:'demo-mtl',iss:'https://securetoken.google.com/demo-mtl',firebase:{sign_in_provider:'google.com'},iat:Math.floor(Date.now()/1000),exp:Math.floor(Date.now()/1000)+3600})}.`;
-  const response=await fetch('http://127.0.0.1:9399/v1/projects/demo-mtl/locations/northamerica-northeast1/services/restaurant/connectors/staff-admin:executeQuery',{method:'POST',headers:{'Content-Type':'application/json','x-firebase-auth-token':token},body:JSON.stringify({operationName:'ListProducts',variables:{}})});
+  if(process.env.MTL_RELEASE_TEST_SQL_REGION!=='northamerica-northeast2') throw new Error('Release test requires production SQL region');
+  const response=await fetch(`http://127.0.0.1:9399/v1/projects/demo-mtl/locations/${process.env.MTL_RELEASE_TEST_SQL_REGION}/services/restaurant/connectors/staff-admin:executeQuery`,{method:'POST',headers:{'Content-Type':'application/json','x-firebase-auth-token':token},body:JSON.stringify({operationName:'ListProducts',variables:{}})});
   const body=await response.json();if(!response.ok||body.errors?.length) throw new Error(JSON.stringify(body));
   const client=new Client({connectionString:process.env.MTL_RELEASE_TEST_DATABASE_URL});await client.connect();
   const manifest=await json(join(root,'release/manifest.json'));

@@ -1,10 +1,12 @@
 {
   "dev": {
     "project": "mtl-service-e3e0c",
-    "instance": "mtl-restaurant-dev"
+    "instance": "mtl-restaurant-dev",
+    "region": "northamerica-northeast1"
   },
   "production": {
     "project": "mtl-service-production",
-    "instance": "mtl-restaurant-production"
+    "instance": "mtl-restaurant-production",
+    "region": "northamerica-northeast2"
   }
 }
