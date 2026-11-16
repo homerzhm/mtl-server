@@ -1,0 +1,10 @@
+{
+  "dev": {
+    "project": "mtl-service-e3e0c",
+    "instance": "mtl-restaurant-dev"
+  },
+  "production": {
+    "project": "mtl-service-production",
+    "instance": "mtl-restaurant-production"
+  }
+}

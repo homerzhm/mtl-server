@@ -1,0 +1,2398 @@
+{
+  "columns": [
+    {
+      "table_name": "booking_settings",
+      "column_name": "id",
+      "data_type": "text",
+      "udt_name": "text",
+      "is_nullable": "NO",
+      "column_default": null
+    },
+    {
+      "table_name": "booking_settings",
+      "column_name": "block_minutes",
+      "data_type": "ARRAY",
+      "udt_name": "_int4",
+      "is_nullable": "NO",
+      "column_default": null
+    },
+    {
+      "table_name": "booking_settings",
+      "column_name": "revision",
+      "data_type": "integer",
+      "udt_name": "int4",
+      "is_nullable": "NO",
+      "column_default": "0"
+    },
+    {
+      "table_name": "booking_settings",
+      "column_name": "updated_at",
+      "data_type": "timestamp with time zone",
+      "udt_name": "timestamptz",
+      "is_nullable": "NO",
+      "column_default": null
+    },
+    {
+      "table_name": "booking_settings",
+      "column_name": "updated_by",
+      "data_type": "text",
+      "udt_name": "text",
+      "is_nullable": "NO",
+      "column_default": null
+    },
+    {
+      "table_name": "capacity_group",
+      "column_name": "id",
+      "data_type": "uuid",
+      "udt_name": "uuid",
+      "is_nullable": "NO",
+      "column_default": "uuid_generate_v4()"
+    },
+    {
+      "table_name": "capacity_group",
+      "column_name": "archived",
+      "data_type": "boolean",
+      "udt_name": "bool",
+      "is_nullable": "NO",
+      "column_default": "false"
+    },
+    {
+      "table_name": "capacity_group",
+      "column_name": "capacity_per_block",
+      "data_type": "integer",
+      "udt_name": "int4",
+      "is_nullable": "NO",
+      "column_default": null
+    },
+    {
+      "table_name": "capacity_group",
+      "column_name": "code",
+      "data_type": "text",
+      "udt_name": "text",
+      "is_nullable": "NO",
+      "column_default": null
+    },
+    {
+      "table_name": "capacity_group",
+      "column_name": "created_at",
+      "data_type": "timestamp with time zone",
+      "udt_name": "timestamptz",
+      "is_nullable": "NO",
+      "column_default": null
+    },
+    {
+      "table_name": "capacity_group",
+      "column_name": "name",
+      "data_type": "text",
+      "udt_name": "text",
+      "is_nullable": "NO",
+      "column_default": null
+    },
+    {
+      "table_name": "capacity_group",
+      "column_name": "revision",
+      "data_type": "integer",
+      "udt_name": "int4",
+      "is_nullable": "NO",
+      "column_default": "0"
+    },
+    {
+      "table_name": "capacity_group",
+      "column_name": "updated_at",
+      "data_type": "timestamp with time zone",
+      "udt_name": "timestamptz",
+      "is_nullable": "NO",
+      "column_default": null
+    },
+    {
+      "table_name": "capacity_group",
+      "column_name": "updated_by",
+      "data_type": "text",
+      "udt_name": "text",
+      "is_nullable": "NO",
+      "column_default": null
+    },
+    {
+      "table_name": "client",
+      "column_name": "id",
+      "data_type": "uuid",
+      "udt_name": "uuid",
+      "is_nullable": "NO",
+      "column_default": "uuid_generate_v4()"
+    },
+    {
+      "table_name": "client",
+      "column_name": "created_at",
+      "data_type": "timestamp with time zone",
+      "udt_name": "timestamptz",
+      "is_nullable": "NO",
+      "column_default": null
+    },
+    {
+      "table_name": "client",
+      "column_name": "email",
+      "data_type": "text",
+      "udt_name": "text",
+      "is_nullable": "YES",
+      "column_default": null
+    },
+    {
+      "table_name": "client",
+      "column_name": "name",
+      "data_type": "text",
+      "udt_name": "text",
+      "is_nullable": "YES",
+      "column_default": null
+    },
+    {
+      "table_name": "client",
+      "column_name": "phone_number",
+      "data_type": "text",
+      "udt_name": "text",
+      "is_nullable": "NO",
+      "column_default": null
+    },
+    {
+      "table_name": "client",
+      "column_name": "revision",
+      "data_type": "integer",
+      "udt_name": "int4",
+      "is_nullable": "NO",
+      "column_default": "0"
+    },
+    {
+      "table_name": "customer_order",
+      "column_name": "id",
+      "data_type": "uuid",
+      "udt_name": "uuid",
+      "is_nullable": "NO",
+      "column_default": "uuid_generate_v4()"
+    },
+    {
+      "table_name": "customer_order",
+      "column_name": "client_id",
+      "data_type": "uuid",
+      "udt_name": "uuid",
+      "is_nullable": "YES",
+      "column_default": null
+    },
+    {
+      "table_name": "customer_order",
+      "column_name": "booking_managed",
+      "data_type": "boolean",
+      "udt_name": "bool",
+      "is_nullable": "NO",
+      "column_default": "false"
+    },
+    {
+      "table_name": "customer_order",
+      "column_name": "cancellation_total_cents",
+      "data_type": "integer",
+      "udt_name": "int4",
+      "is_nullable": "YES",
+      "column_default": null
+    },
+    {
+      "table_name": "customer_order",
+      "column_name": "cancelled_at",
+      "data_type": "timestamp with time zone",
+      "udt_name": "timestamptz",
+      "is_nullable": "YES",
+      "column_default": null
+    },
+    {
+      "table_name": "customer_order",
+      "column_name": "completed_at",
+      "data_type": "timestamp with time zone",
+      "udt_name": "timestamptz",
+      "is_nullable": "YES",
+      "column_default": null
+    },
+    {
+      "table_name": "customer_order",
+      "column_name": "contact_phone_number",
+      "data_type": "text",
+      "udt_name": "text",
+      "is_nullable": "YES",
+      "column_default": null
+    },
+    {
+      "table_name": "customer_order",
+      "column_name": "created_at",
+      "data_type": "timestamp with time zone",
+      "udt_name": "timestamptz",
+      "is_nullable": "NO",
+      "column_default": null
+    },
+    {
+      "table_name": "customer_order",
+      "column_name": "deposit_required_cents",
+      "data_type": "integer",
+      "udt_name": "int4",
+      "is_nullable": "NO",
+      "column_default": "0"
+    },
+    {
+      "table_name": "customer_order",
+      "column_name": "discount_cents",
+      "data_type": "integer",
+      "udt_name": "int4",
+      "is_nullable": "NO",
+      "column_default": "0"
+    },
+    {
+      "table_name": "customer_order",
+      "column_name": "final_total_cents",
+      "data_type": "integer",
+      "udt_name": "int4",
+      "is_nullable": "YES",
+      "column_default": null
+    },
+    {
+      "table_name": "customer_order",
+      "column_name": "fulfillment_type",
+      "data_type": "text",
+      "udt_name": "text",
+      "is_nullable": "NO",
+      "column_default": "'PICKUP'::text"
+    },
+    {
+      "table_name": "customer_order",
+      "column_name": "item_count",
+      "data_type": "integer",
+      "udt_name": "int4",
+      "is_nullable": "NO",
+      "column_default": null
+    },
+    {
+      "table_name": "customer_order",
+      "column_name": "notes",
+      "data_type": "text",
+      "udt_name": "text",
+      "is_nullable": "YES",
+      "column_default": null
+    },
+    {
+      "table_name": "customer_order",
+      "column_name": "order_number",
+      "data_type": "text",
+      "udt_name": "text",
+      "is_nullable": "NO",
+      "column_default": "upper(translate(substr((gen_random_uuid())::text, 1, 6), '01'::text, 'gh'::text))"
+    },
+    {
+      "table_name": "customer_order",
+      "column_name": "revision",
+      "data_type": "integer",
+      "udt_name": "int4",
+      "is_nullable": "NO",
+      "column_default": "0"
+    },
+    {
+      "table_name": "customer_order",
+      "column_name": "scheduled_for",
+      "data_type": "timestamp with time zone",
+      "udt_name": "timestamptz",
+      "is_nullable": "YES",
+      "column_default": null
+    },
+    {
+      "table_name": "customer_order",
+      "column_name": "status",
+      "data_type": "text",
+      "udt_name": "text",
+      "is_nullable": "NO",
+      "column_default": "'CONFIRMED'::text"
+    },
+    {
+      "table_name": "customer_order",
+      "column_name": "subtotal_cents",
+      "data_type": "integer",
+      "udt_name": "int4",
+      "is_nullable": "NO",
+      "column_default": null
+    },
+    {
+      "table_name": "customer_order",
+      "column_name": "updated_at",
+      "data_type": "timestamp with time zone",
+      "udt_name": "timestamptz",
+      "is_nullable": "NO",
+      "column_default": null
+    },
+    {
+      "table_name": "native_order_edit_context",
+      "column_name": "backend_pid",
+      "data_type": "integer",
+      "udt_name": "int4",
+      "is_nullable": "NO",
+      "column_default": null
+    },
+    {
+      "table_name": "native_order_edit_context",
+      "column_name": "transaction_id",
+      "data_type": "bigint",
+      "udt_name": "int8",
+      "is_nullable": "NO",
+      "column_default": null
+    },
+    {
+      "table_name": "native_order_edit_context",
+      "column_name": "order_id",
+      "data_type": "uuid",
+      "udt_name": "uuid",
+      "is_nullable": "NO",
+      "column_default": null
+    },
+    {
+      "table_name": "order_action_request",
+      "column_name": "id",
+      "data_type": "uuid",
+      "udt_name": "uuid",
+      "is_nullable": "NO",
+      "column_default": null
+    },
+    {
+      "table_name": "order_action_request",
+      "column_name": "actor_uid",
+      "data_type": "text",
+      "udt_name": "text",
+      "is_nullable": "NO",
+      "column_default": null
+    },
+    {
+      "table_name": "order_action_request",
+      "column_name": "payload_hash",
+      "data_type": "text",
+      "udt_name": "text",
+      "is_nullable": "NO",
+      "column_default": null
+    },
+    {
+      "table_name": "order_audit_event",
+      "column_name": "id",
+      "data_type": "uuid",
+      "udt_name": "uuid",
+      "is_nullable": "NO",
+      "column_default": "uuid_generate_v4()"
+    },
+    {
+      "table_name": "order_audit_event",
+      "column_name": "order_id",
+      "data_type": "uuid",
+      "udt_name": "uuid",
+      "is_nullable": "NO",
+      "column_default": null
+    },
+    {
+      "table_name": "order_audit_event",
+      "column_name": "action",
+      "data_type": "text",
+      "udt_name": "text",
+      "is_nullable": "NO",
+      "column_default": null
+    },
+    {
+      "table_name": "order_audit_event",
+      "column_name": "actor_uid",
+      "data_type": "text",
+      "udt_name": "text",
+      "is_nullable": "NO",
+      "column_default": null
+    },
+    {
+      "table_name": "order_audit_event",
+      "column_name": "changes",
+      "data_type": "jsonb",
+      "udt_name": "jsonb",
+      "is_nullable": "NO",
+      "column_default": null
+    },
+    {
+      "table_name": "order_audit_event",
+      "column_name": "occurred_at",
+      "data_type": "timestamp with time zone",
+      "udt_name": "timestamptz",
+      "is_nullable": "NO",
+      "column_default": null
+    },
+    {
+      "table_name": "order_audit_event",
+      "column_name": "order_revision",
+      "data_type": "integer",
+      "udt_name": "int4",
+      "is_nullable": "NO",
+      "column_default": null
+    },
+    {
+      "table_name": "order_capacity_allocation",
+      "column_name": "id",
+      "data_type": "uuid",
+      "udt_name": "uuid",
+      "is_nullable": "NO",
+      "column_default": "uuid_generate_v4()"
+    },
+    {
+      "table_name": "order_capacity_allocation",
+      "column_name": "group_id",
+      "data_type": "uuid",
+      "udt_name": "uuid",
+      "is_nullable": "NO",
+      "column_default": null
+    },
+    {
+      "table_name": "order_capacity_allocation",
+      "column_name": "order_id",
+      "data_type": "uuid",
+      "udt_name": "uuid",
+      "is_nullable": "NO",
+      "column_default": null
+    },
+    {
+      "table_name": "order_capacity_allocation",
+      "column_name": "block_minute",
+      "data_type": "integer",
+      "udt_name": "int4",
+      "is_nullable": "NO",
+      "column_default": null
+    },
+    {
+      "table_name": "order_capacity_allocation",
+      "column_name": "pickup_day",
+      "data_type": "date",
+      "udt_name": "date",
+      "is_nullable": "NO",
+      "column_default": null
+    },
+    {
+      "table_name": "order_capacity_allocation",
+      "column_name": "quantity",
+      "data_type": "integer",
+      "udt_name": "int4",
+      "is_nullable": "NO",
+      "column_default": null
+    },
+    {
+      "table_name": "order_creation_request",
+      "column_name": "id",
+      "data_type": "uuid",
+      "udt_name": "uuid",
+      "is_nullable": "NO",
+      "column_default": null
+    },
+    {
+      "table_name": "order_creation_request",
+      "column_name": "actor_uid",
+      "data_type": "text",
+      "udt_name": "text",
+      "is_nullable": "NO",
+      "column_default": null
+    },
+    {
+      "table_name": "order_creation_request",
+      "column_name": "payload_hash",
+      "data_type": "text",
+      "udt_name": "text",
+      "is_nullable": "NO",
+      "column_default": null
+    },
+    {
+      "table_name": "order_item",
+      "column_name": "id",
+      "data_type": "uuid",
+      "udt_name": "uuid",
+      "is_nullable": "NO",
+      "column_default": "uuid_generate_v4()"
+    },
+    {
+      "table_name": "order_item",
+      "column_name": "capacity_group_id",
+      "data_type": "uuid",
+      "udt_name": "uuid",
+      "is_nullable": "YES",
+      "column_default": null
+    },
+    {
+      "table_name": "order_item",
+      "column_name": "order_id",
+      "data_type": "uuid",
+      "udt_name": "uuid",
+      "is_nullable": "NO",
+      "column_default": null
+    },
+    {
+      "table_name": "order_item",
+      "column_name": "product_id",
+      "data_type": "uuid",
+      "udt_name": "uuid",
+      "is_nullable": "NO",
+      "column_default": null
+    },
+    {
+      "table_name": "order_item",
+      "column_name": "capacity_group_name_snapshot",
+      "data_type": "text",
+      "udt_name": "text",
+      "is_nullable": "YES",
+      "column_default": null
+    },
+    {
+      "table_name": "order_item",
+      "column_name": "catalog_unit_price_cents",
+      "data_type": "integer",
+      "udt_name": "int4",
+      "is_nullable": "NO",
+      "column_default": null
+    },
+    {
+      "table_name": "order_item",
+      "column_name": "created_at",
+      "data_type": "timestamp with time zone",
+      "udt_name": "timestamptz",
+      "is_nullable": "NO",
+      "column_default": null
+    },
+    {
+      "table_name": "order_item",
+      "column_name": "notes",
+      "data_type": "text",
+      "udt_name": "text",
+      "is_nullable": "YES",
+      "column_default": null
+    },
+    {
+      "table_name": "order_item",
+      "column_name": "product_name",
+      "data_type": "text",
+      "udt_name": "text",
+      "is_nullable": "NO",
+      "column_default": null
+    },
+    {
+      "table_name": "order_item",
+      "column_name": "quantity",
+      "data_type": "integer",
+      "udt_name": "int4",
+      "is_nullable": "NO",
+      "column_default": null
+    },
+    {
+      "table_name": "order_item",
+      "column_name": "unit_price_cents",
+      "data_type": "integer",
+      "udt_name": "int4",
+      "is_nullable": "NO",
+      "column_default": null
+    },
+    {
+      "table_name": "payment",
+      "column_name": "id",
+      "data_type": "uuid",
+      "udt_name": "uuid",
+      "is_nullable": "NO",
+      "column_default": "uuid_generate_v4()"
+    },
+    {
+      "table_name": "payment",
+      "column_name": "order_id",
+      "data_type": "uuid",
+      "udt_name": "uuid",
+      "is_nullable": "NO",
+      "column_default": null
+    },
+    {
+      "table_name": "payment",
+      "column_name": "amount_cents",
+      "data_type": "integer",
+      "udt_name": "int4",
+      "is_nullable": "NO",
+      "column_default": null
+    },
+    {
+      "table_name": "payment",
+      "column_name": "created_at",
+      "data_type": "timestamp with time zone",
+      "udt_name": "timestamptz",
+      "is_nullable": "NO",
+      "column_default": null
+    },
+    {
+      "table_name": "payment",
+      "column_name": "method",
+      "data_type": "text",
+      "udt_name": "text",
+      "is_nullable": "NO",
+      "column_default": "'CASH'::text"
+    },
+    {
+      "table_name": "payment",
+      "column_name": "provider",
+      "data_type": "text",
+      "udt_name": "text",
+      "is_nullable": "YES",
+      "column_default": null
+    },
+    {
+      "table_name": "payment",
+      "column_name": "provider_reference",
+      "data_type": "text",
+      "udt_name": "text",
+      "is_nullable": "YES",
+      "column_default": null
+    },
+    {
+      "table_name": "payment",
+      "column_name": "received_at",
+      "data_type": "timestamp with time zone",
+      "udt_name": "timestamptz",
+      "is_nullable": "NO",
+      "column_default": null
+    },
+    {
+      "table_name": "payment",
+      "column_name": "status",
+      "data_type": "text",
+      "udt_name": "text",
+      "is_nullable": "NO",
+      "column_default": "'SUCCEEDED'::text"
+    },
+    {
+      "table_name": "product",
+      "column_name": "id",
+      "data_type": "uuid",
+      "udt_name": "uuid",
+      "is_nullable": "NO",
+      "column_default": "uuid_generate_v4()"
+    },
+    {
+      "table_name": "product",
+      "column_name": "capacity_group_id",
+      "data_type": "uuid",
+      "udt_name": "uuid",
+      "is_nullable": "YES",
+      "column_default": null
+    },
+    {
+      "table_name": "product",
+      "column_name": "chinese_name",
+      "data_type": "text",
+      "udt_name": "text",
+      "is_nullable": "YES",
+      "column_default": null
+    },
+    {
+      "table_name": "product",
+      "column_name": "created_at",
+      "data_type": "timestamp with time zone",
+      "udt_name": "timestamptz",
+      "is_nullable": "NO",
+      "column_default": null
+    },
+    {
+      "table_name": "product",
+      "column_name": "description",
+      "data_type": "text",
+      "udt_name": "text",
+      "is_nullable": "YES",
+      "column_default": null
+    },
+    {
+      "table_name": "product",
+      "column_name": "is_active",
+      "data_type": "boolean",
+      "udt_name": "bool",
+      "is_nullable": "NO",
+      "column_default": "true"
+    },
+    {
+      "table_name": "product",
+      "column_name": "name",
+      "data_type": "text",
+      "udt_name": "text",
+      "is_nullable": "NO",
+      "column_default": null
+    },
+    {
+      "table_name": "product",
+      "column_name": "price_cents",
+      "data_type": "integer",
+      "udt_name": "int4",
+      "is_nullable": "NO",
+      "column_default": null
+    },
+    {
+      "table_name": "product",
+      "column_name": "revision",
+      "data_type": "integer",
+      "udt_name": "int4",
+      "is_nullable": "NO",
+      "column_default": "0"
+    },
+    {
+      "table_name": "refund",
+      "column_name": "id",
+      "data_type": "uuid",
+      "udt_name": "uuid",
+      "is_nullable": "NO",
+      "column_default": "uuid_generate_v4()"
+    },
+    {
+      "table_name": "refund",
+      "column_name": "payment_id",
+      "data_type": "uuid",
+      "udt_name": "uuid",
+      "is_nullable": "NO",
+      "column_default": null
+    },
+    {
+      "table_name": "refund",
+      "column_name": "amount_cents",
+      "data_type": "integer",
+      "udt_name": "int4",
+      "is_nullable": "NO",
+      "column_default": null
+    },
+    {
+      "table_name": "refund",
+      "column_name": "created_at",
+      "data_type": "timestamp with time zone",
+      "udt_name": "timestamptz",
+      "is_nullable": "NO",
+      "column_default": null
+    },
+    {
+      "table_name": "refund",
+      "column_name": "status",
+      "data_type": "text",
+      "udt_name": "text",
+      "is_nullable": "NO",
+      "column_default": "'SUCCEEDED'::text"
+    },
+    {
+      "table_name": "staff_account",
+      "column_name": "uid",
+      "data_type": "text",
+      "udt_name": "text",
+      "is_nullable": "NO",
+      "column_default": null
+    },
+    {
+      "table_name": "staff_account",
+      "column_name": "claim_sync_status",
+      "data_type": "text",
+      "udt_name": "text",
+      "is_nullable": "NO",
+      "column_default": "'APPLIED'::text"
+    },
+    {
+      "table_name": "staff_account",
+      "column_name": "created_at",
+      "data_type": "timestamp with time zone",
+      "udt_name": "timestamptz",
+      "is_nullable": "NO",
+      "column_default": null
+    },
+    {
+      "table_name": "staff_account",
+      "column_name": "email",
+      "data_type": "text",
+      "udt_name": "text",
+      "is_nullable": "YES",
+      "column_default": null
+    },
+    {
+      "table_name": "staff_account",
+      "column_name": "is_admin",
+      "data_type": "boolean",
+      "udt_name": "bool",
+      "is_nullable": "NO",
+      "column_default": "false"
+    },
+    {
+      "table_name": "staff_account",
+      "column_name": "is_staff",
+      "data_type": "boolean",
+      "udt_name": "bool",
+      "is_nullable": "NO",
+      "column_default": "false"
+    },
+    {
+      "table_name": "staff_account",
+      "column_name": "last_sign_in_at",
+      "data_type": "timestamp with time zone",
+      "udt_name": "timestamptz",
+      "is_nullable": "YES",
+      "column_default": null
+    },
+    {
+      "table_name": "staff_account",
+      "column_name": "name",
+      "data_type": "text",
+      "udt_name": "text",
+      "is_nullable": "YES",
+      "column_default": null
+    },
+    {
+      "table_name": "staff_account",
+      "column_name": "photo_url",
+      "data_type": "text",
+      "udt_name": "text",
+      "is_nullable": "YES",
+      "column_default": null
+    },
+    {
+      "table_name": "staff_account",
+      "column_name": "revision",
+      "data_type": "integer",
+      "udt_name": "int4",
+      "is_nullable": "NO",
+      "column_default": "0"
+    },
+    {
+      "table_name": "staff_role_change",
+      "column_name": "id",
+      "data_type": "uuid",
+      "udt_name": "uuid",
+      "is_nullable": "NO",
+      "column_default": "uuid_generate_v4()"
+    },
+    {
+      "table_name": "staff_role_change",
+      "column_name": "actor_uid",
+      "data_type": "text",
+      "udt_name": "text",
+      "is_nullable": "NO",
+      "column_default": null
+    },
+    {
+      "table_name": "staff_role_change",
+      "column_name": "applied_at",
+      "data_type": "timestamp with time zone",
+      "udt_name": "timestamptz",
+      "is_nullable": "YES",
+      "column_default": null
+    },
+    {
+      "table_name": "staff_role_change",
+      "column_name": "attempts",
+      "data_type": "integer",
+      "udt_name": "int4",
+      "is_nullable": "NO",
+      "column_default": "0"
+    },
+    {
+      "table_name": "staff_role_change",
+      "column_name": "error_code",
+      "data_type": "text",
+      "udt_name": "text",
+      "is_nullable": "YES",
+      "column_default": null
+    },
+    {
+      "table_name": "staff_role_change",
+      "column_name": "is_admin",
+      "data_type": "boolean",
+      "udt_name": "bool",
+      "is_nullable": "NO",
+      "column_default": null
+    },
+    {
+      "table_name": "staff_role_change",
+      "column_name": "is_staff",
+      "data_type": "boolean",
+      "udt_name": "bool",
+      "is_nullable": "NO",
+      "column_default": null
+    },
+    {
+      "table_name": "staff_role_change",
+      "column_name": "occurred_at",
+      "data_type": "timestamp with time zone",
+      "udt_name": "timestamptz",
+      "is_nullable": "NO",
+      "column_default": null
+    },
+    {
+      "table_name": "staff_role_change",
+      "column_name": "previous_admin",
+      "data_type": "boolean",
+      "udt_name": "bool",
+      "is_nullable": "NO",
+      "column_default": null
+    },
+    {
+      "table_name": "staff_role_change",
+      "column_name": "previous_staff",
+      "data_type": "boolean",
+      "udt_name": "bool",
+      "is_nullable": "NO",
+      "column_default": null
+    },
+    {
+      "table_name": "staff_role_change",
+      "column_name": "role_revision",
+      "data_type": "integer",
+      "udt_name": "int4",
+      "is_nullable": "NO",
+      "column_default": null
+    },
+    {
+      "table_name": "staff_role_change",
+      "column_name": "status",
+      "data_type": "text",
+      "udt_name": "text",
+      "is_nullable": "NO",
+      "column_default": "'PENDING'::text"
+    },
+    {
+      "table_name": "staff_role_change",
+      "column_name": "target_uid",
+      "data_type": "text",
+      "udt_name": "text",
+      "is_nullable": "NO",
+      "column_default": null
+    },
+    {
+      "table_name": "staff_role_control",
+      "column_name": "id",
+      "data_type": "text",
+      "udt_name": "text",
+      "is_nullable": "NO",
+      "column_default": null
+    },
+    {
+      "table_name": "staff_role_control",
+      "column_name": "pending_change_id",
+      "data_type": "uuid",
+      "udt_name": "uuid",
+      "is_nullable": "YES",
+      "column_default": null
+    }
+  ],
+  "constraints": [
+    {
+      "table_name": "booking_settings",
+      "name": "booking_settings_block_minutes_not_null",
+      "contype": "n",
+      "definition": "NOT NULL block_minutes",
+      "convalidated": true
+    },
+    {
+      "table_name": "booking_settings",
+      "name": "booking_settings_id_not_null",
+      "contype": "n",
+      "definition": "NOT NULL id",
+      "convalidated": true
+    },
+    {
+      "table_name": "booking_settings",
+      "name": "booking_settings_pkey",
+      "contype": "p",
+      "definition": "PRIMARY KEY (id)",
+      "convalidated": true
+    },
+    {
+      "table_name": "booking_settings",
+      "name": "booking_settings_revision_not_null",
+      "contype": "n",
+      "definition": "NOT NULL revision",
+      "convalidated": true
+    },
+    {
+      "table_name": "booking_settings",
+      "name": "booking_settings_updated_at_not_null",
+      "contype": "n",
+      "definition": "NOT NULL updated_at",
+      "convalidated": true
+    },
+    {
+      "table_name": "booking_settings",
+      "name": "booking_settings_updated_by_not_null",
+      "contype": "n",
+      "definition": "NOT NULL updated_by",
+      "convalidated": true
+    },
+    {
+      "table_name": "capacity_group",
+      "name": "capacity_group_archived_not_null",
+      "contype": "n",
+      "definition": "NOT NULL archived",
+      "convalidated": true
+    },
+    {
+      "table_name": "capacity_group",
+      "name": "capacity_group_capacity_per_block_not_null",
+      "contype": "n",
+      "definition": "NOT NULL capacity_per_block",
+      "convalidated": true
+    },
+    {
+      "table_name": "capacity_group",
+      "name": "capacity_group_code_not_null",
+      "contype": "n",
+      "definition": "NOT NULL code",
+      "convalidated": true
+    },
+    {
+      "table_name": "capacity_group",
+      "name": "capacity_group_created_at_not_null",
+      "contype": "n",
+      "definition": "NOT NULL created_at",
+      "convalidated": true
+    },
+    {
+      "table_name": "capacity_group",
+      "name": "capacity_group_id_not_null",
+      "contype": "n",
+      "definition": "NOT NULL id",
+      "convalidated": true
+    },
+    {
+      "table_name": "capacity_group",
+      "name": "capacity_group_name_not_null",
+      "contype": "n",
+      "definition": "NOT NULL name",
+      "convalidated": true
+    },
+    {
+      "table_name": "capacity_group",
+      "name": "capacity_group_pkey",
+      "contype": "p",
+      "definition": "PRIMARY KEY (id)",
+      "convalidated": true
+    },
+    {
+      "table_name": "capacity_group",
+      "name": "capacity_group_revision_not_null",
+      "contype": "n",
+      "definition": "NOT NULL revision",
+      "convalidated": true
+    },
+    {
+      "table_name": "capacity_group",
+      "name": "capacity_group_updated_at_not_null",
+      "contype": "n",
+      "definition": "NOT NULL updated_at",
+      "convalidated": true
+    },
+    {
+      "table_name": "capacity_group",
+      "name": "capacity_group_updated_by_not_null",
+      "contype": "n",
+      "definition": "NOT NULL updated_by",
+      "convalidated": true
+    },
+    {
+      "table_name": "client",
+      "name": "client_created_at_not_null",
+      "contype": "n",
+      "definition": "NOT NULL created_at",
+      "convalidated": true
+    },
+    {
+      "table_name": "client",
+      "name": "client_id_not_null",
+      "contype": "n",
+      "definition": "NOT NULL id",
+      "convalidated": true
+    },
+    {
+      "table_name": "client",
+      "name": "client_phone_number_not_null",
+      "contype": "n",
+      "definition": "NOT NULL phone_number",
+      "convalidated": true
+    },
+    {
+      "table_name": "client",
+      "name": "client_pkey",
+      "contype": "p",
+      "definition": "PRIMARY KEY (id)",
+      "convalidated": true
+    },
+    {
+      "table_name": "client",
+      "name": "client_revision_not_null",
+      "contype": "n",
+      "definition": "NOT NULL revision",
+      "convalidated": true
+    },
+    {
+      "table_name": "customer_order",
+      "name": "customer_order_booking_managed_not_null",
+      "contype": "n",
+      "definition": "NOT NULL booking_managed",
+      "convalidated": true
+    },
+    {
+      "table_name": "customer_order",
+      "name": "customer_order_client_id_fkey",
+      "contype": "f",
+      "definition": "FOREIGN KEY (client_id) REFERENCES client(id) ON DELETE RESTRICT",
+      "convalidated": true
+    },
+    {
+      "table_name": "customer_order",
+      "name": "customer_order_created_at_not_null",
+      "contype": "n",
+      "definition": "NOT NULL created_at",
+      "convalidated": true
+    },
+    {
+      "table_name": "customer_order",
+      "name": "customer_order_deposit_required_cents_not_null",
+      "contype": "n",
+      "definition": "NOT NULL deposit_required_cents",
+      "convalidated": true
+    },
+    {
+      "table_name": "customer_order",
+      "name": "customer_order_discount_cents_not_null",
+      "contype": "n",
+      "definition": "NOT NULL discount_cents",
+      "convalidated": true
+    },
+    {
+      "table_name": "customer_order",
+      "name": "customer_order_fulfillment_type_not_null",
+      "contype": "n",
+      "definition": "NOT NULL fulfillment_type",
+      "convalidated": true
+    },
+    {
+      "table_name": "customer_order",
+      "name": "customer_order_id_not_null",
+      "contype": "n",
+      "definition": "NOT NULL id",
+      "convalidated": true
+    },
+    {
+      "table_name": "customer_order",
+      "name": "customer_order_item_count_not_null",
+      "contype": "n",
+      "definition": "NOT NULL item_count",
+      "convalidated": true
+    },
+    {
+      "table_name": "customer_order",
+      "name": "customer_order_order_number_not_null",
+      "contype": "n",
+      "definition": "NOT NULL order_number",
+      "convalidated": true
+    },
+    {
+      "table_name": "customer_order",
+      "name": "customer_order_pkey",
+      "contype": "p",
+      "definition": "PRIMARY KEY (id)",
+      "convalidated": true
+    },
+    {
+      "table_name": "customer_order",
+      "name": "customer_order_revision_not_null",
+      "contype": "n",
+      "definition": "NOT NULL revision",
+      "convalidated": true
+    },
+    {
+      "table_name": "customer_order",
+      "name": "customer_order_status_not_null",
+      "contype": "n",
+      "definition": "NOT NULL status",
+      "convalidated": true
+    },
+    {
+      "table_name": "customer_order",
+      "name": "customer_order_subtotal_cents_not_null",
+      "contype": "n",
+      "definition": "NOT NULL subtotal_cents",
+      "convalidated": true
+    },
+    {
+      "table_name": "customer_order",
+      "name": "customer_order_updated_at_not_null",
+      "contype": "n",
+      "definition": "NOT NULL updated_at",
+      "convalidated": true
+    },
+    {
+      "table_name": "customer_order",
+      "name": "customer_order_values_check",
+      "contype": "c",
+      "definition": "CHECK (((subtotal_cents >= 0) AND (item_count > 0) AND ((discount_cents >= 0) AND (discount_cents <= subtotal_cents)) AND (deposit_required_cents >= 0) AND (final_total_cents >= 0) AND (cancellation_total_cents >= 0) AND (revision >= 0) AND (fulfillment_type = 'PICKUP'::text) AND (status = ANY (ARRAY['CONFIRMED'::text, 'PAID'::text, 'COMPLETED'::text, 'CANCELLED'::text])) AND (order_number ~ '^[2-9A-HJKMNP-Z]{6}$'::text) AND ((contact_phone_number IS NULL) OR (contact_phone_number ~ '^\\+[1-9][0-9]{1,14}$'::text)) AND (((status = ANY (ARRAY['CONFIRMED'::text, 'PAID'::text])) AND (completed_at IS NULL) AND (cancelled_at IS NULL) AND (cancellation_total_cents IS NULL)) OR ((status = 'COMPLETED'::text) AND (completed_at IS NOT NULL) AND (cancelled_at IS NULL) AND (cancellation_total_cents IS NULL)) OR ((status = 'CANCELLED'::text) AND (cancelled_at IS NOT NULL) AND (cancellation_total_cents IS NOT NULL)))))",
+      "convalidated": true
+    },
+    {
+      "table_name": "customer_order",
+      "name": "order_capacity_totals",
+      "contype": "t",
+      "definition": "TRIGGER DEFERRABLE INITIALLY DEFERRED",
+      "convalidated": true
+    },
+    {
+      "table_name": "native_order_edit_context",
+      "name": "native_order_edit_context_backend_pid_not_null",
+      "contype": "n",
+      "definition": "NOT NULL backend_pid",
+      "convalidated": true
+    },
+    {
+      "table_name": "native_order_edit_context",
+      "name": "native_order_edit_context_order_id_not_null",
+      "contype": "n",
+      "definition": "NOT NULL order_id",
+      "convalidated": true
+    },
+    {
+      "table_name": "native_order_edit_context",
+      "name": "native_order_edit_context_pkey",
+      "contype": "p",
+      "definition": "PRIMARY KEY (backend_pid, transaction_id, order_id)",
+      "convalidated": true
+    },
+    {
+      "table_name": "native_order_edit_context",
+      "name": "native_order_edit_context_transaction_id_not_null",
+      "contype": "n",
+      "definition": "NOT NULL transaction_id",
+      "convalidated": true
+    },
+    {
+      "table_name": "order_action_request",
+      "name": "order_action_request_actor_uid_not_null",
+      "contype": "n",
+      "definition": "NOT NULL actor_uid",
+      "convalidated": true
+    },
+    {
+      "table_name": "order_action_request",
+      "name": "order_action_request_id_not_null",
+      "contype": "n",
+      "definition": "NOT NULL id",
+      "convalidated": true
+    },
+    {
+      "table_name": "order_action_request",
+      "name": "order_action_request_payload_hash_not_null",
+      "contype": "n",
+      "definition": "NOT NULL payload_hash",
+      "convalidated": true
+    },
+    {
+      "table_name": "order_action_request",
+      "name": "order_action_request_pkey",
+      "contype": "p",
+      "definition": "PRIMARY KEY (id)",
+      "convalidated": true
+    },
+    {
+      "table_name": "order_audit_event",
+      "name": "order_audit_event_action_not_null",
+      "contype": "n",
+      "definition": "NOT NULL action",
+      "convalidated": true
+    },
+    {
+      "table_name": "order_audit_event",
+      "name": "order_audit_event_actor_uid_not_null",
+      "contype": "n",
+      "definition": "NOT NULL actor_uid",
+      "convalidated": true
+    },
+    {
+      "table_name": "order_audit_event",
+      "name": "order_audit_event_changes_not_null",
+      "contype": "n",
+      "definition": "NOT NULL changes",
+      "convalidated": true
+    },
+    {
+      "table_name": "order_audit_event",
+      "name": "order_audit_event_id_not_null",
+      "contype": "n",
+      "definition": "NOT NULL id",
+      "convalidated": true
+    },
+    {
+      "table_name": "order_audit_event",
+      "name": "order_audit_event_occurred_at_not_null",
+      "contype": "n",
+      "definition": "NOT NULL occurred_at",
+      "convalidated": true
+    },
+    {
+      "table_name": "order_audit_event",
+      "name": "order_audit_event_order_id_fkey",
+      "contype": "f",
+      "definition": "FOREIGN KEY (order_id) REFERENCES customer_order(id) ON DELETE RESTRICT",
+      "convalidated": true
+    },
+    {
+      "table_name": "order_audit_event",
+      "name": "order_audit_event_order_id_not_null",
+      "contype": "n",
+      "definition": "NOT NULL order_id",
+      "convalidated": true
+    },
+    {
+      "table_name": "order_audit_event",
+      "name": "order_audit_event_order_revision_not_null",
+      "contype": "n",
+      "definition": "NOT NULL order_revision",
+      "convalidated": true
+    },
+    {
+      "table_name": "order_audit_event",
+      "name": "order_audit_event_pkey",
+      "contype": "p",
+      "definition": "PRIMARY KEY (id)",
+      "convalidated": true
+    },
+    {
+      "table_name": "order_audit_event",
+      "name": "order_audit_values_check",
+      "contype": "c",
+      "definition": "CHECK (((actor_uid <> ''::text) AND (action <> ''::text) AND (order_revision >= 0) AND (jsonb_typeof(changes) = 'object'::text) AND (changes ? 'before'::text) AND (changes ? 'after'::text)))",
+      "convalidated": true
+    },
+    {
+      "table_name": "order_capacity_allocation",
+      "name": "capacity_values_check",
+      "contype": "c",
+      "definition": "CHECK ((((block_minute >= 0) AND (block_minute <= 1439)) AND ((block_minute % 15) = 0) AND (quantity > 0)))",
+      "convalidated": true
+    },
+    {
+      "table_name": "order_capacity_allocation",
+      "name": "order_capacity_allocation_block_minute_not_null",
+      "contype": "n",
+      "definition": "NOT NULL block_minute",
+      "convalidated": true
+    },
+    {
+      "table_name": "order_capacity_allocation",
+      "name": "order_capacity_allocation_group_id_fkey",
+      "contype": "f",
+      "definition": "FOREIGN KEY (group_id) REFERENCES capacity_group(id) ON DELETE CASCADE",
+      "convalidated": true
+    },
+    {
+      "table_name": "order_capacity_allocation",
+      "name": "order_capacity_allocation_group_id_not_null",
+      "contype": "n",
+      "definition": "NOT NULL group_id",
+      "convalidated": true
+    },
+    {
+      "table_name": "order_capacity_allocation",
+      "name": "order_capacity_allocation_id_not_null",
+      "contype": "n",
+      "definition": "NOT NULL id",
+      "convalidated": true
+    },
+    {
+      "table_name": "order_capacity_allocation",
+      "name": "order_capacity_allocation_order_id_fkey",
+      "contype": "f",
+      "definition": "FOREIGN KEY (order_id) REFERENCES customer_order(id) ON DELETE CASCADE",
+      "convalidated": true
+    },
+    {
+      "table_name": "order_capacity_allocation",
+      "name": "order_capacity_allocation_order_id_not_null",
+      "contype": "n",
+      "definition": "NOT NULL order_id",
+      "convalidated": true
+    },
+    {
+      "table_name": "order_capacity_allocation",
+      "name": "order_capacity_allocation_pickup_day_not_null",
+      "contype": "n",
+      "definition": "NOT NULL pickup_day",
+      "convalidated": true
+    },
+    {
+      "table_name": "order_capacity_allocation",
+      "name": "order_capacity_allocation_pkey",
+      "contype": "p",
+      "definition": "PRIMARY KEY (id)",
+      "convalidated": true
+    },
+    {
+      "table_name": "order_capacity_allocation",
+      "name": "order_capacity_allocation_quantity_not_null",
+      "contype": "n",
+      "definition": "NOT NULL quantity",
+      "convalidated": true
+    },
+    {
+      "table_name": "order_capacity_allocation",
+      "name": "order_capacity_totals",
+      "contype": "t",
+      "definition": "TRIGGER DEFERRABLE INITIALLY DEFERRED",
+      "convalidated": true
+    },
+    {
+      "table_name": "order_creation_request",
+      "name": "order_creation_request_actor_uid_not_null",
+      "contype": "n",
+      "definition": "NOT NULL actor_uid",
+      "convalidated": true
+    },
+    {
+      "table_name": "order_creation_request",
+      "name": "order_creation_request_id_not_null",
+      "contype": "n",
+      "definition": "NOT NULL id",
+      "convalidated": true
+    },
+    {
+      "table_name": "order_creation_request",
+      "name": "order_creation_request_payload_hash_not_null",
+      "contype": "n",
+      "definition": "NOT NULL payload_hash",
+      "convalidated": true
+    },
+    {
+      "table_name": "order_creation_request",
+      "name": "order_creation_request_pkey",
+      "contype": "p",
+      "definition": "PRIMARY KEY (id)",
+      "convalidated": true
+    },
+    {
+      "table_name": "order_item",
+      "name": "order_capacity_totals",
+      "contype": "t",
+      "definition": "TRIGGER DEFERRABLE INITIALLY DEFERRED",
+      "convalidated": true
+    },
+    {
+      "table_name": "order_item",
+      "name": "order_item_capacity_group_id_fkey",
+      "contype": "f",
+      "definition": "FOREIGN KEY (capacity_group_id) REFERENCES capacity_group(id) ON DELETE RESTRICT",
+      "convalidated": true
+    },
+    {
+      "table_name": "order_item",
+      "name": "order_item_catalog_unit_price_cents_not_null",
+      "contype": "n",
+      "definition": "NOT NULL catalog_unit_price_cents",
+      "convalidated": true
+    },
+    {
+      "table_name": "order_item",
+      "name": "order_item_created_at_not_null",
+      "contype": "n",
+      "definition": "NOT NULL created_at",
+      "convalidated": true
+    },
+    {
+      "table_name": "order_item",
+      "name": "order_item_id_not_null",
+      "contype": "n",
+      "definition": "NOT NULL id",
+      "convalidated": true
+    },
+    {
+      "table_name": "order_item",
+      "name": "order_item_order_id_fkey",
+      "contype": "f",
+      "definition": "FOREIGN KEY (order_id) REFERENCES customer_order(id) ON DELETE RESTRICT",
+      "convalidated": true
+    },
+    {
+      "table_name": "order_item",
+      "name": "order_item_order_id_not_null",
+      "contype": "n",
+      "definition": "NOT NULL order_id",
+      "convalidated": true
+    },
+    {
+      "table_name": "order_item",
+      "name": "order_item_pkey",
+      "contype": "p",
+      "definition": "PRIMARY KEY (id)",
+      "convalidated": true
+    },
+    {
+      "table_name": "order_item",
+      "name": "order_item_product_id_fkey",
+      "contype": "f",
+      "definition": "FOREIGN KEY (product_id) REFERENCES product(id) ON DELETE RESTRICT",
+      "convalidated": true
+    },
+    {
+      "table_name": "order_item",
+      "name": "order_item_product_id_not_null",
+      "contype": "n",
+      "definition": "NOT NULL product_id",
+      "convalidated": true
+    },
+    {
+      "table_name": "order_item",
+      "name": "order_item_product_name_not_null",
+      "contype": "n",
+      "definition": "NOT NULL product_name",
+      "convalidated": true
+    },
+    {
+      "table_name": "order_item",
+      "name": "order_item_quantity_not_null",
+      "contype": "n",
+      "definition": "NOT NULL quantity",
+      "convalidated": true
+    },
+    {
+      "table_name": "order_item",
+      "name": "order_item_unit_price_cents_not_null",
+      "contype": "n",
+      "definition": "NOT NULL unit_price_cents",
+      "convalidated": true
+    },
+    {
+      "table_name": "order_item",
+      "name": "order_item_values_check",
+      "contype": "c",
+      "definition": "CHECK (((quantity > 0) AND (unit_price_cents >= 0) AND (catalog_unit_price_cents >= 0) AND (((quantity)::bigint * unit_price_cents) <= 2147483647)))",
+      "convalidated": true
+    },
+    {
+      "table_name": "payment",
+      "name": "payment_amount_cents_not_null",
+      "contype": "n",
+      "definition": "NOT NULL amount_cents",
+      "convalidated": true
+    },
+    {
+      "table_name": "payment",
+      "name": "payment_created_at_not_null",
+      "contype": "n",
+      "definition": "NOT NULL created_at",
+      "convalidated": true
+    },
+    {
+      "table_name": "payment",
+      "name": "payment_id_not_null",
+      "contype": "n",
+      "definition": "NOT NULL id",
+      "convalidated": true
+    },
+    {
+      "table_name": "payment",
+      "name": "payment_method_not_null",
+      "contype": "n",
+      "definition": "NOT NULL method",
+      "convalidated": true
+    },
+    {
+      "table_name": "payment",
+      "name": "payment_order_id_fkey",
+      "contype": "f",
+      "definition": "FOREIGN KEY (order_id) REFERENCES customer_order(id) ON DELETE RESTRICT",
+      "convalidated": true
+    },
+    {
+      "table_name": "payment",
+      "name": "payment_order_id_not_null",
+      "contype": "n",
+      "definition": "NOT NULL order_id",
+      "convalidated": true
+    },
+    {
+      "table_name": "payment",
+      "name": "payment_pkey",
+      "contype": "p",
+      "definition": "PRIMARY KEY (id)",
+      "convalidated": true
+    },
+    {
+      "table_name": "payment",
+      "name": "payment_received_at_not_null",
+      "contype": "n",
+      "definition": "NOT NULL received_at",
+      "convalidated": true
+    },
+    {
+      "table_name": "payment",
+      "name": "payment_status_not_null",
+      "contype": "n",
+      "definition": "NOT NULL status",
+      "convalidated": true
+    },
+    {
+      "table_name": "payment",
+      "name": "payment_values_check",
+      "contype": "c",
+      "definition": "CHECK (((amount_cents > 0) AND (method = 'CASH'::text) AND (status = ANY (ARRAY['SUCCEEDED'::text, 'VOIDED'::text])) AND (provider IS NULL) AND (provider_reference IS NULL)))",
+      "convalidated": true
+    },
+    {
+      "table_name": "product",
+      "name": "product_capacity_group_id_fkey",
+      "contype": "f",
+      "definition": "FOREIGN KEY (capacity_group_id) REFERENCES capacity_group(id) ON DELETE SET NULL",
+      "convalidated": true
+    },
+    {
+      "table_name": "product",
+      "name": "product_created_at_not_null",
+      "contype": "n",
+      "definition": "NOT NULL created_at",
+      "convalidated": true
+    },
+    {
+      "table_name": "product",
+      "name": "product_id_not_null",
+      "contype": "n",
+      "definition": "NOT NULL id",
+      "convalidated": true
+    },
+    {
+      "table_name": "product",
+      "name": "product_is_active_not_null",
+      "contype": "n",
+      "definition": "NOT NULL is_active",
+      "convalidated": true
+    },
+    {
+      "table_name": "product",
+      "name": "product_name_not_null",
+      "contype": "n",
+      "definition": "NOT NULL name",
+      "convalidated": true
+    },
+    {
+      "table_name": "product",
+      "name": "product_pkey",
+      "contype": "p",
+      "definition": "PRIMARY KEY (id)",
+      "convalidated": true
+    },
+    {
+      "table_name": "product",
+      "name": "product_price_cents_not_null",
+      "contype": "n",
+      "definition": "NOT NULL price_cents",
+      "convalidated": true
+    },
+    {
+      "table_name": "product",
+      "name": "product_revision_not_null",
+      "contype": "n",
+      "definition": "NOT NULL revision",
+      "convalidated": true
+    },
+    {
+      "table_name": "refund",
+      "name": "refund_amount_cents_not_null",
+      "contype": "n",
+      "definition": "NOT NULL amount_cents",
+      "convalidated": true
+    },
+    {
+      "table_name": "refund",
+      "name": "refund_created_at_not_null",
+      "contype": "n",
+      "definition": "NOT NULL created_at",
+      "convalidated": true
+    },
+    {
+      "table_name": "refund",
+      "name": "refund_id_not_null",
+      "contype": "n",
+      "definition": "NOT NULL id",
+      "convalidated": true
+    },
+    {
+      "table_name": "refund",
+      "name": "refund_payment_id_fkey",
+      "contype": "f",
+      "definition": "FOREIGN KEY (payment_id) REFERENCES payment(id) ON DELETE RESTRICT",
+      "convalidated": true
+    },
+    {
+      "table_name": "refund",
+      "name": "refund_payment_id_not_null",
+      "contype": "n",
+      "definition": "NOT NULL payment_id",
+      "convalidated": true
+    },
+    {
+      "table_name": "refund",
+      "name": "refund_pkey",
+      "contype": "p",
+      "definition": "PRIMARY KEY (id)",
+      "convalidated": true
+    },
+    {
+      "table_name": "refund",
+      "name": "refund_status_not_null",
+      "contype": "n",
+      "definition": "NOT NULL status",
+      "convalidated": true
+    },
+    {
+      "table_name": "refund",
+      "name": "refund_values_check",
+      "contype": "c",
+      "definition": "CHECK (((amount_cents > 0) AND (status = ANY (ARRAY['SUCCEEDED'::text, 'VOIDED'::text]))))",
+      "convalidated": true
+    },
+    {
+      "table_name": "staff_account",
+      "name": "staff_account_claim_sync_status_not_null",
+      "contype": "n",
+      "definition": "NOT NULL claim_sync_status",
+      "convalidated": true
+    },
+    {
+      "table_name": "staff_account",
+      "name": "staff_account_created_at_not_null",
+      "contype": "n",
+      "definition": "NOT NULL created_at",
+      "convalidated": true
+    },
+    {
+      "table_name": "staff_account",
+      "name": "staff_account_is_admin_not_null",
+      "contype": "n",
+      "definition": "NOT NULL is_admin",
+      "convalidated": true
+    },
+    {
+      "table_name": "staff_account",
+      "name": "staff_account_is_staff_not_null",
+      "contype": "n",
+      "definition": "NOT NULL is_staff",
+      "convalidated": true
+    },
+    {
+      "table_name": "staff_account",
+      "name": "staff_account_pkey",
+      "contype": "p",
+      "definition": "PRIMARY KEY (uid)",
+      "convalidated": true
+    },
+    {
+      "table_name": "staff_account",
+      "name": "staff_account_revision_not_null",
+      "contype": "n",
+      "definition": "NOT NULL revision",
+      "convalidated": true
+    },
+    {
+      "table_name": "staff_account",
+      "name": "staff_account_uid_not_null",
+      "contype": "n",
+      "definition": "NOT NULL uid",
+      "convalidated": true
+    },
+    {
+      "table_name": "staff_role_change",
+      "name": "staff_role_change_actor_uid_not_null",
+      "contype": "n",
+      "definition": "NOT NULL actor_uid",
+      "convalidated": true
+    },
+    {
+      "table_name": "staff_role_change",
+      "name": "staff_role_change_attempts_not_null",
+      "contype": "n",
+      "definition": "NOT NULL attempts",
+      "convalidated": true
+    },
+    {
+      "table_name": "staff_role_change",
+      "name": "staff_role_change_id_not_null",
+      "contype": "n",
+      "definition": "NOT NULL id",
+      "convalidated": true
+    },
+    {
+      "table_name": "staff_role_change",
+      "name": "staff_role_change_is_admin_not_null",
+      "contype": "n",
+      "definition": "NOT NULL is_admin",
+      "convalidated": true
+    },
+    {
+      "table_name": "staff_role_change",
+      "name": "staff_role_change_is_staff_not_null",
+      "contype": "n",
+      "definition": "NOT NULL is_staff",
+      "convalidated": true
+    },
+    {
+      "table_name": "staff_role_change",
+      "name": "staff_role_change_occurred_at_not_null",
+      "contype": "n",
+      "definition": "NOT NULL occurred_at",
+      "convalidated": true
+    },
+    {
+      "table_name": "staff_role_change",
+      "name": "staff_role_change_pkey",
+      "contype": "p",
+      "definition": "PRIMARY KEY (id)",
+      "convalidated": true
+    },
+    {
+      "table_name": "staff_role_change",
+      "name": "staff_role_change_previous_admin_not_null",
+      "contype": "n",
+      "definition": "NOT NULL previous_admin",
+      "convalidated": true
+    },
+    {
+      "table_name": "staff_role_change",
+      "name": "staff_role_change_previous_staff_not_null",
+      "contype": "n",
+      "definition": "NOT NULL previous_staff",
+      "convalidated": true
+    },
+    {
+      "table_name": "staff_role_change",
+      "name": "staff_role_change_role_revision_not_null",
+      "contype": "n",
+      "definition": "NOT NULL role_revision",
+      "convalidated": true
+    },
+    {
+      "table_name": "staff_role_change",
+      "name": "staff_role_change_status_not_null",
+      "contype": "n",
+      "definition": "NOT NULL status",
+      "convalidated": true
+    },
+    {
+      "table_name": "staff_role_change",
+      "name": "staff_role_change_target_uid_not_null",
+      "contype": "n",
+      "definition": "NOT NULL target_uid",
+      "convalidated": true
+    },
+    {
+      "table_name": "staff_role_control",
+      "name": "staff_role_control_id_not_null",
+      "contype": "n",
+      "definition": "NOT NULL id",
+      "convalidated": true
+    },
+    {
+      "table_name": "staff_role_control",
+      "name": "staff_role_control_pkey",
+      "contype": "p",
+      "definition": "PRIMARY KEY (id)",
+      "convalidated": true
+    }
+  ],
+  "indexes": [
+    {
+      "table_name": "booking_settings",
+      "name": "booking_settings_pkey",
+      "definition": "CREATE UNIQUE INDEX booking_settings_pkey ON public.booking_settings USING btree (id)"
+    },
+    {
+      "table_name": "capacity_group",
+      "name": "capacity_group_code_uidx",
+      "definition": "CREATE UNIQUE INDEX capacity_group_code_uidx ON public.capacity_group USING btree (code)"
+    },
+    {
+      "table_name": "capacity_group",
+      "name": "capacity_group_pkey",
+      "definition": "CREATE UNIQUE INDEX capacity_group_pkey ON public.capacity_group USING btree (id)"
+    },
+    {
+      "table_name": "client",
+      "name": "client_phoneNumber_uidx",
+      "definition": "CREATE UNIQUE INDEX \"client_phoneNumber_uidx\" ON public.client USING btree (phone_number)"
+    },
+    {
+      "table_name": "client",
+      "name": "client_pkey",
+      "definition": "CREATE UNIQUE INDEX client_pkey ON public.client USING btree (id)"
+    },
+    {
+      "table_name": "customer_order",
+      "name": "customer_order_clientId_idx",
+      "definition": "CREATE INDEX \"customer_order_clientId_idx\" ON public.customer_order USING btree (client_id)"
+    },
+    {
+      "table_name": "customer_order",
+      "name": "customer_order_contactPhoneNumber_createdAt_id_idx",
+      "definition": "CREATE INDEX \"customer_order_contactPhoneNumber_createdAt_id_idx\" ON public.customer_order USING btree (contact_phone_number, created_at, id)"
+    },
+    {
+      "table_name": "customer_order",
+      "name": "customer_order_createdAt_id_idx",
+      "definition": "CREATE INDEX \"customer_order_createdAt_id_idx\" ON public.customer_order USING btree (created_at, id)"
+    },
+    {
+      "table_name": "customer_order",
+      "name": "customer_order_orderNumber_uidx",
+      "definition": "CREATE UNIQUE INDEX \"customer_order_orderNumber_uidx\" ON public.customer_order USING btree (order_number)"
+    },
+    {
+      "table_name": "customer_order",
+      "name": "customer_order_pkey",
+      "definition": "CREATE UNIQUE INDEX customer_order_pkey ON public.customer_order USING btree (id)"
+    },
+    {
+      "table_name": "native_order_edit_context",
+      "name": "native_order_edit_context_pkey",
+      "definition": "CREATE UNIQUE INDEX native_order_edit_context_pkey ON public.native_order_edit_context USING btree (backend_pid, transaction_id, order_id)"
+    },
+    {
+      "table_name": "order_action_request",
+      "name": "order_action_request_pkey",
+      "definition": "CREATE UNIQUE INDEX order_action_request_pkey ON public.order_action_request USING btree (id)"
+    },
+    {
+      "table_name": "order_audit_event",
+      "name": "order_audit_event_orderId_idx",
+      "definition": "CREATE INDEX \"order_audit_event_orderId_idx\" ON public.order_audit_event USING btree (order_id)"
+    },
+    {
+      "table_name": "order_audit_event",
+      "name": "order_audit_event_orderId_orderRevision_uidx",
+      "definition": "CREATE UNIQUE INDEX \"order_audit_event_orderId_orderRevision_uidx\" ON public.order_audit_event USING btree (order_id, order_revision)"
+    },
+    {
+      "table_name": "order_audit_event",
+      "name": "order_audit_event_pkey",
+      "definition": "CREATE UNIQUE INDEX order_audit_event_pkey ON public.order_audit_event USING btree (id)"
+    },
+    {
+      "table_name": "order_capacity_allocation",
+      "name": "order_capacity_allocation_groupId_idx",
+      "definition": "CREATE INDEX \"order_capacity_allocation_groupId_idx\" ON public.order_capacity_allocation USING btree (group_id)"
+    },
+    {
+      "table_name": "order_capacity_allocation",
+      "name": "order_capacity_allocation_orderId_groupId_blockMinute_uidx",
+      "definition": "CREATE UNIQUE INDEX \"order_capacity_allocation_orderId_groupId_blockMinute_uidx\" ON public.order_capacity_allocation USING btree (order_id, group_id, block_minute)"
+    },
+    {
+      "table_name": "order_capacity_allocation",
+      "name": "order_capacity_allocation_orderId_idx",
+      "definition": "CREATE INDEX \"order_capacity_allocation_orderId_idx\" ON public.order_capacity_allocation USING btree (order_id)"
+    },
+    {
+      "table_name": "order_capacity_allocation",
+      "name": "order_capacity_allocation_pickupDay_groupId_blockMinute_idx",
+      "definition": "CREATE INDEX \"order_capacity_allocation_pickupDay_groupId_blockMinute_idx\" ON public.order_capacity_allocation USING btree (pickup_day, group_id, block_minute)"
+    },
+    {
+      "table_name": "order_capacity_allocation",
+      "name": "order_capacity_allocation_pkey",
+      "definition": "CREATE UNIQUE INDEX order_capacity_allocation_pkey ON public.order_capacity_allocation USING btree (id)"
+    },
+    {
+      "table_name": "order_creation_request",
+      "name": "order_creation_request_pkey",
+      "definition": "CREATE UNIQUE INDEX order_creation_request_pkey ON public.order_creation_request USING btree (id)"
+    },
+    {
+      "table_name": "order_item",
+      "name": "order_item_capacityGroupId_idx",
+      "definition": "CREATE INDEX \"order_item_capacityGroupId_idx\" ON public.order_item USING btree (capacity_group_id)"
+    },
+    {
+      "table_name": "order_item",
+      "name": "order_item_orderId_createdAt_id_idx",
+      "definition": "CREATE INDEX \"order_item_orderId_createdAt_id_idx\" ON public.order_item USING btree (order_id, created_at, id)"
+    },
+    {
+      "table_name": "order_item",
+      "name": "order_item_orderId_idx",
+      "definition": "CREATE INDEX \"order_item_orderId_idx\" ON public.order_item USING btree (order_id)"
+    },
+    {
+      "table_name": "order_item",
+      "name": "order_item_pkey",
+      "definition": "CREATE UNIQUE INDEX order_item_pkey ON public.order_item USING btree (id)"
+    },
+    {
+      "table_name": "order_item",
+      "name": "order_item_productId_idx",
+      "definition": "CREATE INDEX \"order_item_productId_idx\" ON public.order_item USING btree (product_id)"
+    },
+    {
+      "table_name": "payment",
+      "name": "payment_orderId_createdAt_id_idx",
+      "definition": "CREATE INDEX \"payment_orderId_createdAt_id_idx\" ON public.payment USING btree (order_id, created_at, id)"
+    },
+    {
+      "table_name": "payment",
+      "name": "payment_orderId_idx",
+      "definition": "CREATE INDEX \"payment_orderId_idx\" ON public.payment USING btree (order_id)"
+    },
+    {
+      "table_name": "payment",
+      "name": "payment_pkey",
+      "definition": "CREATE UNIQUE INDEX payment_pkey ON public.payment USING btree (id)"
+    },
+    {
+      "table_name": "payment",
+      "name": "payment_provider_providerReference_uidx",
+      "definition": "CREATE UNIQUE INDEX \"payment_provider_providerReference_uidx\" ON public.payment USING btree (provider, provider_reference)"
+    },
+    {
+      "table_name": "product",
+      "name": "product_capacityGroupId_idx",
+      "definition": "CREATE INDEX \"product_capacityGroupId_idx\" ON public.product USING btree (capacity_group_id)"
+    },
+    {
+      "table_name": "product",
+      "name": "product_pkey",
+      "definition": "CREATE UNIQUE INDEX product_pkey ON public.product USING btree (id)"
+    },
+    {
+      "table_name": "refund",
+      "name": "refund_paymentId_createdAt_id_idx",
+      "definition": "CREATE INDEX \"refund_paymentId_createdAt_id_idx\" ON public.refund USING btree (payment_id, created_at, id)"
+    },
+    {
+      "table_name": "refund",
+      "name": "refund_paymentId_idx",
+      "definition": "CREATE INDEX \"refund_paymentId_idx\" ON public.refund USING btree (payment_id)"
+    },
+    {
+      "table_name": "refund",
+      "name": "refund_pkey",
+      "definition": "CREATE UNIQUE INDEX refund_pkey ON public.refund USING btree (id)"
+    },
+    {
+      "table_name": "staff_account",
+      "name": "staff_account_createdAt_uid_idx",
+      "definition": "CREATE INDEX \"staff_account_createdAt_uid_idx\" ON public.staff_account USING btree (created_at, uid)"
+    },
+    {
+      "table_name": "staff_account",
+      "name": "staff_account_pkey",
+      "definition": "CREATE UNIQUE INDEX staff_account_pkey ON public.staff_account USING btree (uid)"
+    },
+    {
+      "table_name": "staff_role_change",
+      "name": "staff_role_change_occurredAt_id_idx",
+      "definition": "CREATE INDEX \"staff_role_change_occurredAt_id_idx\" ON public.staff_role_change USING btree (occurred_at, id)"
+    },
+    {
+      "table_name": "staff_role_change",
+      "name": "staff_role_change_pkey",
+      "definition": "CREATE UNIQUE INDEX staff_role_change_pkey ON public.staff_role_change USING btree (id)"
+    },
+    {
+      "table_name": "staff_role_change",
+      "name": "staff_role_change_targetUid_roleRevision_uidx",
+      "definition": "CREATE UNIQUE INDEX \"staff_role_change_targetUid_roleRevision_uidx\" ON public.staff_role_change USING btree (target_uid, role_revision)"
+    },
+    {
+      "table_name": "staff_role_control",
+      "name": "staff_role_control_pkey",
+      "definition": "CREATE UNIQUE INDEX staff_role_control_pkey ON public.staff_role_control USING btree (id)"
+    }
+  ],
+  "triggers": [
+    {
+      "table_name": "booking_settings",
+      "name": "booking_capacity_lock",
+      "tgenabled": "O",
+      "definition": "CREATE TRIGGER booking_capacity_lock BEFORE INSERT OR DELETE OR UPDATE ON public.booking_settings FOR EACH STATEMENT EXECUTE FUNCTION lock_booking_capacity()"
+    },
+    {
+      "table_name": "booking_settings",
+      "name": "booking_settings_guard",
+      "tgenabled": "O",
+      "definition": "CREATE TRIGGER booking_settings_guard BEFORE INSERT OR DELETE OR UPDATE ON public.booking_settings FOR EACH ROW EXECUTE FUNCTION guard_booking_settings()"
+    },
+    {
+      "table_name": "capacity_group",
+      "name": "booking_capacity_lock",
+      "tgenabled": "O",
+      "definition": "CREATE TRIGGER booking_capacity_lock BEFORE INSERT OR DELETE OR UPDATE ON public.capacity_group FOR EACH STATEMENT EXECUTE FUNCTION lock_booking_capacity()"
+    },
+    {
+      "table_name": "capacity_group",
+      "name": "capacity_group_guard",
+      "tgenabled": "O",
+      "definition": "CREATE TRIGGER capacity_group_guard BEFORE INSERT OR DELETE OR UPDATE ON public.capacity_group FOR EACH ROW EXECUTE FUNCTION guard_capacity_group()"
+    },
+    {
+      "table_name": "customer_order",
+      "name": "booking_capacity_lock",
+      "tgenabled": "O",
+      "definition": "CREATE TRIGGER booking_capacity_lock BEFORE INSERT OR DELETE OR UPDATE ON public.customer_order FOR EACH STATEMENT EXECUTE FUNCTION lock_booking_capacity()"
+    },
+    {
+      "table_name": "customer_order",
+      "name": "managed_booking_guard",
+      "tgenabled": "O",
+      "definition": "CREATE TRIGGER managed_booking_guard BEFORE UPDATE ON public.customer_order FOR EACH ROW EXECUTE FUNCTION protect_managed_booking()"
+    },
+    {
+      "table_name": "customer_order",
+      "name": "managed_item_totals_guard",
+      "tgenabled": "O",
+      "definition": "CREATE TRIGGER managed_item_totals_guard BEFORE UPDATE ON public.customer_order FOR EACH ROW EXECUTE FUNCTION protect_managed_item_totals()"
+    },
+    {
+      "table_name": "customer_order",
+      "name": "native_order_status_guard",
+      "tgenabled": "O",
+      "definition": "CREATE TRIGGER native_order_status_guard BEFORE UPDATE ON public.customer_order FOR EACH ROW EXECUTE FUNCTION guard_native_order_status()"
+    },
+    {
+      "table_name": "customer_order",
+      "name": "order_capacity_totals",
+      "tgenabled": "O",
+      "definition": "CREATE CONSTRAINT TRIGGER order_capacity_totals AFTER INSERT ON public.customer_order DEFERRABLE INITIALLY DEFERRED FOR EACH ROW EXECUTE FUNCTION check_order_capacity_totals()"
+    },
+    {
+      "table_name": "customer_order",
+      "name": "order_identity_immutable",
+      "tgenabled": "O",
+      "definition": "CREATE TRIGGER order_identity_immutable BEFORE UPDATE ON public.customer_order FOR EACH ROW EXECUTE FUNCTION preserve_order_identity()"
+    },
+    {
+      "table_name": "order_audit_event",
+      "name": "order_audit_immutable",
+      "tgenabled": "O",
+      "definition": "CREATE TRIGGER order_audit_immutable BEFORE DELETE OR UPDATE ON public.order_audit_event FOR EACH ROW EXECUTE FUNCTION reject_order_audit_mutation()"
+    },
+    {
+      "table_name": "order_audit_event",
+      "name": "order_audit_no_truncate",
+      "tgenabled": "O",
+      "definition": "CREATE TRIGGER order_audit_no_truncate BEFORE TRUNCATE ON public.order_audit_event FOR EACH STATEMENT EXECUTE FUNCTION reject_order_audit_mutation()"
+    },
+    {
+      "table_name": "order_capacity_allocation",
+      "name": "booking_capacity_lock",
+      "tgenabled": "O",
+      "definition": "CREATE TRIGGER booking_capacity_lock BEFORE INSERT OR DELETE OR UPDATE ON public.order_capacity_allocation FOR EACH STATEMENT EXECUTE FUNCTION lock_booking_capacity()"
+    },
+    {
+      "table_name": "order_capacity_allocation",
+      "name": "capacity_allocation_guard",
+      "tgenabled": "O",
+      "definition": "CREATE TRIGGER capacity_allocation_guard BEFORE INSERT OR DELETE OR UPDATE ON public.order_capacity_allocation FOR EACH ROW EXECUTE FUNCTION guard_capacity_allocation()"
+    },
+    {
+      "table_name": "order_capacity_allocation",
+      "name": "order_capacity_totals",
+      "tgenabled": "O",
+      "definition": "CREATE CONSTRAINT TRIGGER order_capacity_totals AFTER INSERT ON public.order_capacity_allocation DEFERRABLE INITIALLY DEFERRED FOR EACH ROW EXECUTE FUNCTION check_order_capacity_totals()"
+    },
+    {
+      "table_name": "order_item",
+      "name": "booking_capacity_lock",
+      "tgenabled": "O",
+      "definition": "CREATE TRIGGER booking_capacity_lock BEFORE INSERT OR DELETE OR UPDATE ON public.order_item FOR EACH STATEMENT EXECUTE FUNCTION lock_booking_capacity()"
+    },
+    {
+      "table_name": "order_item",
+      "name": "legacy_group_creation_guard",
+      "tgenabled": "O",
+      "definition": "CREATE TRIGGER legacy_group_creation_guard BEFORE INSERT ON public.order_item FOR EACH ROW EXECUTE FUNCTION reject_unallocated_group()"
+    },
+    {
+      "table_name": "order_item",
+      "name": "managed_item_guard",
+      "tgenabled": "O",
+      "definition": "CREATE TRIGGER managed_item_guard BEFORE DELETE OR UPDATE ON public.order_item FOR EACH ROW EXECUTE FUNCTION protect_managed_items()"
+    },
+    {
+      "table_name": "order_item",
+      "name": "order_capacity_totals",
+      "tgenabled": "O",
+      "definition": "CREATE CONSTRAINT TRIGGER order_capacity_totals AFTER INSERT ON public.order_item DEFERRABLE INITIALLY DEFERRED FOR EACH ROW EXECUTE FUNCTION check_order_capacity_totals()"
+    },
+    {
+      "table_name": "payment",
+      "name": "native_payment_guard",
+      "tgenabled": "O",
+      "definition": "CREATE TRIGGER native_payment_guard BEFORE INSERT ON public.payment FOR EACH ROW EXECUTE FUNCTION guard_native_payment()"
+    },
+    {
+      "table_name": "payment",
+      "name": "payment_correction_identity_guard",
+      "tgenabled": "O",
+      "definition": "CREATE TRIGGER payment_correction_identity_guard BEFORE UPDATE ON public.payment FOR EACH ROW EXECUTE FUNCTION guard_payment_correction_identity()"
+    },
+    {
+      "table_name": "product",
+      "name": "booking_capacity_lock",
+      "tgenabled": "O",
+      "definition": "CREATE TRIGGER booking_capacity_lock BEFORE INSERT OR DELETE OR UPDATE ON public.product FOR EACH STATEMENT EXECUTE FUNCTION lock_booking_capacity()"
+    },
+    {
+      "table_name": "product",
+      "name": "product_capacity_group_guard",
+      "tgenabled": "O",
+      "definition": "CREATE TRIGGER product_capacity_group_guard BEFORE INSERT OR UPDATE ON public.product FOR EACH ROW EXECUTE FUNCTION guard_product_capacity_group()"
+    }
+  ],
+  "routines": [
+    {
+      "name": "apply_native_order_edit",
+      "args": "target uuid, expected_revision integer, header jsonb, lines jsonb, allocations jsonb",
+      "security_definer": true,
+      "config": [
+        "search_path=pg_catalog, public"
+      ],
+      "definition": "CREATE OR REPLACE FUNCTION public.apply_native_order_edit(target uuid, expected_revision integer, header jsonb, lines jsonb, allocations jsonb)\n RETURNS void\n LANGUAGE plpgsql\n SECURITY DEFINER\n SET search_path TO 'pg_catalog', 'public'\nAS $function$\nDECLARE parent public.customer_order; line jsonb; allocation jsonb; total bigint;\nBEGIN\n  PERFORM pg_advisory_xact_lock(hashtextextended('booking-capacity',0));\n  SELECT * INTO parent FROM public.customer_order WHERE id=target FOR UPDATE;\n  IF parent.id IS NULL OR parent.revision<>expected_revision THEN RAISE EXCEPTION 'ORDER_CONFLICT'; END IF;\n  IF parent.status NOT IN ('CONFIRMED','PAID') THEN RAISE EXCEPTION 'ORDER_LOCKED'; END IF;\n  SELECT sum((v->>'quantity')::bigint*(v->>'unit_price_cents')::bigint) INTO total FROM jsonb_array_elements(lines) v;\n  IF jsonb_array_length(lines)=0 OR total IS DISTINCT FROM (header->>'subtotal_cents')::bigint\n    OR total<parent.discount_cents OR total>2147483647 THEN RAISE EXCEPTION 'ORDER_EDIT_INVALID'; END IF;\n  IF EXISTS(SELECT 1 FROM (\n    SELECT v->>'capacity_group_id' id,sum((v->>'quantity')::bigint) n FROM jsonb_array_elements(lines) v\n      WHERE v->>'capacity_group_id' IS NOT NULL GROUP BY 1) i\n    FULL JOIN (SELECT v->>'groupId' id,sum((v->>'quantity')::bigint) n FROM jsonb_array_elements(allocations) v GROUP BY 1) a USING(id)\n    WHERE i.n IS DISTINCT FROM a.n) THEN RAISE EXCEPTION 'GROUP_ALLOCATION_INVALID'; END IF;\n  INSERT INTO public.native_order_edit_context VALUES(pg_backend_pid(),txid_current(),target);\n  UPDATE public.customer_order SET revision=revision+1,updated_at=now(),\n    scheduled_for=(header->>'scheduled_for')::timestamptz,client_id=(header->>'client_id')::uuid,\n    contact_phone_number=header->>'contact_phone_number',notes=header->>'notes',\n    subtotal_cents=(header->>'subtotal_cents')::integer,item_count=jsonb_array_length(lines),\n    final_total_cents=(header->>'final_total_cents')::integer,status=header->>'status',booking_managed=true WHERE id=target;\n  DELETE FROM public.order_capacity_allocation WHERE order_id=target;\n  DELETE FROM public.order_item WHERE order_id=target AND id NOT IN (SELECT (v->>'id')::uuid FROM jsonb_array_elements(lines) v);\n  FOR line IN SELECT * FROM jsonb_array_elements(lines) LOOP\n    IF EXISTS(SELECT 1 FROM public.order_item WHERE id=(line->>'id')::uuid AND order_id=target) THEN\n      UPDATE public.order_item SET quantity=(line->>'quantity')::integer WHERE id=(line->>'id')::uuid AND order_id=target;\n    ELSE\n      INSERT INTO public.order_item(id,order_id,product_id,product_name,catalog_unit_price_cents,unit_price_cents,quantity,\n        capacity_group_id,capacity_group_name_snapshot,notes,created_at)\n        VALUES((line->>'id')::uuid,target,(line->>'product_id')::uuid,line->>'product_name',\n          (line->>'catalog_unit_price_cents')::integer,(line->>'unit_price_cents')::integer,(line->>'quantity')::integer,\n          (line->>'capacity_group_id')::uuid,line->>'capacity_group_name_snapshot',line->>'notes',now());\n    END IF;\n  END LOOP;\n  FOR allocation IN SELECT * FROM jsonb_array_elements(allocations) LOOP\n    INSERT INTO public.order_capacity_allocation(id,order_id,pickup_day,group_id,block_minute,quantity)\n      VALUES(gen_random_uuid(),target,((header->>'scheduled_for')::timestamptz AT TIME ZONE 'America/Toronto')::date,\n        (allocation->>'groupId')::uuid,(allocation->>'blockMinute')::integer,(allocation->>'quantity')::integer);\n  END LOOP;\n  IF (SELECT sum(quantity::bigint*unit_price_cents) FROM public.order_item WHERE order_id=target) IS DISTINCT FROM total\n    OR (SELECT count(*) FROM public.order_item WHERE order_id=target)<>jsonb_array_length(lines) THEN\n    RAISE EXCEPTION 'ORDER_EDIT_INVALID';\n  END IF;\n  DELETE FROM public.native_order_edit_context WHERE backend_pid=pg_backend_pid() AND transaction_id=txid_current() AND order_id=target;\nEND $function$\n"
+    },
+    {
+      "name": "check_order_capacity_totals",
+      "args": "",
+      "security_definer": false,
+      "config": [
+        "search_path=pg_catalog, public, pg_temp"
+      ],
+      "definition": "CREATE OR REPLACE FUNCTION public.check_order_capacity_totals()\n RETURNS trigger\n LANGUAGE plpgsql\n SET search_path TO 'pg_catalog', 'public', 'pg_temp'\nAS $function$\nDECLARE target uuid;\nBEGIN\n  IF TG_TABLE_NAME='customer_order' THEN target:=NEW.id; ELSE target:=NEW.order_id; END IF;\n  IF EXISTS(SELECT 1 FROM customer_order WHERE id=target AND booking_managed) AND EXISTS(\n    SELECT 1 FROM\n      (SELECT capacity_group_id AS group_id,sum(quantity) AS quantity FROM order_item\n        WHERE order_id=target AND capacity_group_id IS NOT NULL GROUP BY capacity_group_id) i\n      FULL JOIN (SELECT group_id,sum(quantity) AS quantity FROM order_capacity_allocation WHERE order_id=target GROUP BY group_id) a USING(group_id)\n      WHERE i.quantity IS DISTINCT FROM a.quantity\n  ) THEN RAISE EXCEPTION 'GROUP_ALLOCATION_INVALID'; END IF;\n  RETURN NULL;\nEND $function$\n"
+    },
+    {
+      "name": "guard_booking_settings",
+      "args": "",
+      "security_definer": false,
+      "config": [
+        "search_path=pg_catalog, public, pg_temp"
+      ],
+      "definition": "CREATE OR REPLACE FUNCTION public.guard_booking_settings()\n RETURNS trigger\n LANGUAGE plpgsql\n SET search_path TO 'pg_catalog', 'public', 'pg_temp'\nAS $function$\nBEGIN\n  IF TG_OP='DELETE' THEN RAISE EXCEPTION 'BOOKING_SETTINGS_REQUIRED'; END IF;\n  IF NEW.id<>'default' OR cardinality(NEW.block_minutes)=0 OR cardinality(NEW.block_minutes)>96\n    OR array_ndims(NEW.block_minutes)<>1\n    OR EXISTS(SELECT 1 FROM unnest(NEW.block_minutes) m WHERE m IS NULL OR m<0 OR m>1439 OR m%15<>0)\n    OR (SELECT count(DISTINCT m) FROM unnest(NEW.block_minutes) m)<>cardinality(NEW.block_minutes)\n    OR NEW.revision<0 THEN RAISE EXCEPTION 'BOOKING_CONFIGURATION_INVALID'; END IF;\n  IF TG_OP='UPDATE' THEN\n    IF NEW.id<>OLD.id OR NEW.revision<>OLD.revision+1 THEN RAISE EXCEPTION 'BOOKING_CONFIGURATION_CONFLICT'; END IF;\n    IF EXISTS(SELECT 1 FROM order_capacity_allocation a JOIN customer_order o ON o.id=a.order_id\n      WHERE o.status<>'CANCELLED' AND a.pickup_day>=(clock_timestamp() AT TIME ZONE 'America/Toronto')::date\n        AND NOT(a.block_minute=ANY(NEW.block_minutes))) THEN RAISE EXCEPTION 'BOOKING_BLOCK_IN_USE'; END IF;\n  END IF;\n  RETURN NEW;\nEND $function$\n"
+    },
+    {
+      "name": "guard_capacity_allocation",
+      "args": "",
+      "security_definer": false,
+      "config": [
+        "search_path=pg_catalog, public, pg_temp"
+      ],
+      "definition": "CREATE OR REPLACE FUNCTION public.guard_capacity_allocation()\n RETURNS trigger\n LANGUAGE plpgsql\n SET search_path TO 'pg_catalog', 'public', 'pg_temp'\nAS $function$\nDECLARE parent customer_order; limit_value integer; used bigint;\nBEGIN\n  IF public.native_order_edit_allowed(CASE WHEN TG_OP='DELETE' THEN OLD.order_id ELSE NEW.order_id END) THEN\n    IF TG_OP='DELETE' THEN RETURN OLD; ELSE RETURN NEW; END IF;\n  END IF;\n  IF TG_OP<>'INSERT' THEN RAISE EXCEPTION 'ALLOCATION_AWARE_EDIT_REQUIRED'; END IF;\n  SELECT * INTO parent FROM customer_order WHERE id=NEW.order_id;\n  IF NOT parent.booking_managed OR NEW.pickup_day IS DISTINCT FROM (parent.scheduled_for AT TIME ZONE 'America/Toronto')::date\n    OR NOT EXISTS(SELECT 1 FROM booking_settings WHERE id='default' AND NEW.block_minute=ANY(block_minutes))\n    OR NOT EXISTS(SELECT 1 FROM order_item WHERE order_id=NEW.order_id AND capacity_group_id=NEW.group_id)\n    THEN RAISE EXCEPTION 'GROUP_ALLOCATION_INVALID'; END IF;\n  SELECT capacity_per_block INTO limit_value FROM capacity_group WHERE id=NEW.group_id AND NOT archived;\n  IF limit_value IS NULL THEN RAISE EXCEPTION 'GROUP_UNAVAILABLE'; END IF;\n  SELECT COALESCE(sum(a.quantity),0) INTO used FROM order_capacity_allocation a JOIN customer_order o ON o.id=a.order_id\n    WHERE a.pickup_day=NEW.pickup_day AND a.group_id=NEW.group_id AND a.block_minute=NEW.block_minute AND o.status<>'CANCELLED';\n  IF parent.status<>'CANCELLED' AND used+NEW.quantity>limit_value THEN RAISE EXCEPTION 'GROUP_CAPACITY'; END IF;\n  RETURN NEW;\nEND $function$\n"
+    },
+    {
+      "name": "guard_capacity_group",
+      "args": "",
+      "security_definer": false,
+      "config": [
+        "search_path=pg_catalog, public, pg_temp"
+      ],
+      "definition": "CREATE OR REPLACE FUNCTION public.guard_capacity_group()\n RETURNS trigger\n LANGUAGE plpgsql\n SET search_path TO 'pg_catalog', 'public', 'pg_temp'\nAS $function$\nBEGIN\n  IF TG_OP='DELETE' THEN RAISE EXCEPTION 'ARCHIVE_GROUP_INSTEAD'; END IF;\n  IF NEW.capacity_per_block<1 OR NEW.revision<0 OR NEW.code !~ '^[A-Z][A-Z0-9_]{0,63}$'\n    OR btrim(NEW.name)='' OR NEW.name<>btrim(NEW.name) OR length(NEW.name)>200 THEN RAISE EXCEPTION 'BOOKING_CONFIGURATION_INVALID'; END IF;\n  IF TG_OP='UPDATE' THEN\n    IF NEW.id<>OLD.id OR NEW.code<>OLD.code OR NEW.created_at<>OLD.created_at OR NEW.revision<>OLD.revision+1 THEN RAISE EXCEPTION 'BOOKING_CONFIGURATION_CONFLICT'; END IF;\n    IF NEW.archived AND EXISTS(SELECT 1 FROM product WHERE capacity_group_id=NEW.id) THEN RAISE EXCEPTION 'GROUP_HAS_PRODUCTS'; END IF;\n    IF EXISTS(SELECT 1 FROM order_capacity_allocation a JOIN customer_order o ON o.id=a.order_id\n      WHERE a.group_id=NEW.id AND o.status<>'CANCELLED'\n        AND a.pickup_day>=(clock_timestamp() AT TIME ZONE 'America/Toronto')::date\n      GROUP BY a.pickup_day,a.block_minute HAVING sum(a.quantity)>NEW.capacity_per_block) THEN RAISE EXCEPTION 'GROUP_CAPACITY_IN_USE'; END IF;\n  END IF;\n  RETURN NEW;\nEND $function$\n"
+    },
+    {
+      "name": "guard_native_order_status",
+      "args": "",
+      "security_definer": false,
+      "config": [
+        "search_path=pg_catalog, public, pg_temp"
+      ],
+      "definition": "CREATE OR REPLACE FUNCTION public.guard_native_order_status()\n RETURNS trigger\n LANGUAGE plpgsql\n SET search_path TO 'pg_catalog', 'public', 'pg_temp'\nAS $function$\nDECLARE net bigint; total integer;\nBEGIN\n  IF OLD.booking_managed AND NEW.status IS DISTINCT FROM OLD.status THEN\n    IF NEW.status='PAID' THEN\n      IF OLD.status<>'CONFIRMED' THEN RAISE EXCEPTION 'ORDER_LOCKED'; END IF;\n      total := OLD.subtotal_cents-OLD.discount_cents;\n      SELECT COALESCE((SELECT sum(amount_cents) FROM payment WHERE order_id=OLD.id AND status='SUCCEEDED'),0)\n        -COALESCE((SELECT sum(r.amount_cents) FROM refund r JOIN payment p ON p.id=r.payment_id\n          WHERE p.order_id=OLD.id AND r.status='SUCCEEDED'),0) INTO net;\n      IF net<total THEN RAISE EXCEPTION 'ORDER_BALANCE_DUE'; END IF;\n      IF NEW.final_total_cents IS DISTINCT FROM total THEN RAISE EXCEPTION 'ORDER_TOTAL_REVIEW'; END IF;\n    ELSIF NEW.status='COMPLETED' AND OLD.status<>'PAID' THEN\n      RAISE EXCEPTION 'ORDER_NOT_PAID';\n    END IF;\n  END IF;\n  RETURN NEW;\nEND $function$\n"
+    },
+    {
+      "name": "guard_native_payment",
+      "args": "",
+      "security_definer": false,
+      "config": [
+        "search_path=pg_catalog, public, pg_temp"
+      ],
+      "definition": "CREATE OR REPLACE FUNCTION public.guard_native_payment()\n RETURNS trigger\n LANGUAGE plpgsql\n SET search_path TO 'pg_catalog', 'public', 'pg_temp'\nAS $function$\nDECLARE parent customer_order;\nBEGIN\n  -- Same parent lock as callable/connector writes; serializes with Paid and pickup.\n  SELECT * INTO parent FROM customer_order WHERE id=NEW.order_id FOR UPDATE;\n  IF parent.booking_managed AND parent.status<>'CONFIRMED' THEN RAISE EXCEPTION 'ORDER_LOCKED'; END IF;\n  RETURN NEW;\nEND $function$\n"
+    },
+    {
+      "name": "guard_payment_correction_identity",
+      "args": "",
+      "security_definer": false,
+      "config": [
+        "search_path=pg_catalog, public, pg_temp"
+      ],
+      "definition": "CREATE OR REPLACE FUNCTION public.guard_payment_correction_identity()\n RETURNS trigger\n LANGUAGE plpgsql\n SET search_path TO 'pg_catalog', 'public', 'pg_temp'\nAS $function$\nBEGIN\n  IF NEW.id IS DISTINCT FROM OLD.id OR NEW.order_id IS DISTINCT FROM OLD.order_id\n    OR NEW.method IS DISTINCT FROM OLD.method OR NEW.received_at IS DISTINCT FROM OLD.received_at\n    OR NEW.created_at IS DISTINCT FROM OLD.created_at OR NEW.provider IS DISTINCT FROM OLD.provider\n    OR NEW.provider_reference IS DISTINCT FROM OLD.provider_reference THEN\n    RAISE EXCEPTION 'PAYMENT_IDENTITY_IMMUTABLE';\n  END IF;\n  RETURN NEW;\nEND $function$\n"
+    },
+    {
+      "name": "guard_product_capacity_group",
+      "args": "",
+      "security_definer": false,
+      "config": [
+        "search_path=pg_catalog, public, pg_temp"
+      ],
+      "definition": "CREATE OR REPLACE FUNCTION public.guard_product_capacity_group()\n RETURNS trigger\n LANGUAGE plpgsql\n SET search_path TO 'pg_catalog', 'public', 'pg_temp'\nAS $function$\nBEGIN\n  IF NEW.capacity_group_id IS NOT NULL AND NOT EXISTS(SELECT 1 FROM capacity_group WHERE id=NEW.capacity_group_id AND NOT archived)\n    THEN RAISE EXCEPTION 'GROUP_UNAVAILABLE'; END IF;\n  IF TG_OP='UPDATE' AND NEW.capacity_group_id IS DISTINCT FROM OLD.capacity_group_id AND NEW.revision<>OLD.revision+1\n    THEN RAISE EXCEPTION 'PRODUCT_CONFLICT'; END IF;\n  RETURN NEW;\nEND $function$\n"
+    },
+    {
+      "name": "lock_booking_capacity",
+      "args": "",
+      "security_definer": false,
+      "config": [
+        "search_path=pg_catalog, public, pg_temp"
+      ],
+      "definition": "CREATE OR REPLACE FUNCTION public.lock_booking_capacity()\n RETURNS trigger\n LANGUAGE plpgsql\n SET search_path TO 'pg_catalog', 'public', 'pg_temp'\nAS $function$\nBEGIN\n  PERFORM pg_advisory_xact_lock(hashtextextended('booking-capacity',0));\n  RETURN NULL;\nEND $function$\n"
+    },
+    {
+      "name": "lock_order_creation_sources",
+      "args": "product_ids uuid[], client_id uuid",
+      "security_definer": true,
+      "config": [
+        "search_path=pg_catalog, public"
+      ],
+      "definition": "CREATE OR REPLACE FUNCTION public.lock_order_creation_sources(product_ids uuid[], client_id uuid)\n RETURNS void\n LANGUAGE plpgsql\n SECURITY DEFINER\n SET search_path TO 'pg_catalog', 'public'\nAS $function$\nBEGIN\n  PERFORM 1 FROM public.product WHERE id=ANY(product_ids) ORDER BY id FOR SHARE;\n  IF client_id IS NOT NULL THEN\n    PERFORM 1 FROM public.client WHERE id=client_id FOR SHARE;\n  END IF;\nEND $function$\n"
+    },
+    {
+      "name": "native_order_edit_allowed",
+      "args": "target uuid",
+      "security_definer": true,
+      "config": [
+        "search_path=pg_catalog, public"
+      ],
+      "definition": "CREATE OR REPLACE FUNCTION public.native_order_edit_allowed(target uuid)\n RETURNS boolean\n LANGUAGE sql\n SECURITY DEFINER\n SET search_path TO 'pg_catalog', 'public'\nAS $function$\n  SELECT EXISTS(SELECT 1 FROM public.native_order_edit_context\n    WHERE backend_pid=pg_backend_pid() AND transaction_id=txid_current() AND order_id=target)\n$function$\n"
+    },
+    {
+      "name": "preserve_order_identity",
+      "args": "",
+      "security_definer": false,
+      "config": null,
+      "definition": "CREATE OR REPLACE FUNCTION public.preserve_order_identity()\n RETURNS trigger\n LANGUAGE plpgsql\nAS $function$\nBEGIN\n  IF NEW.id IS DISTINCT FROM OLD.id OR NEW.order_number IS DISTINCT FROM OLD.order_number\n    OR NEW.created_at IS DISTINCT FROM OLD.created_at THEN\n    RAISE EXCEPTION 'Order identity and creation time are immutable' USING ERRCODE = '23514';\n  END IF;\n  RETURN NEW;\nEND\n$function$\n"
+    },
+    {
+      "name": "protect_managed_booking",
+      "args": "",
+      "security_definer": false,
+      "config": [
+        "search_path=pg_catalog, public, pg_temp"
+      ],
+      "definition": "CREATE OR REPLACE FUNCTION public.protect_managed_booking()\n RETURNS trigger\n LANGUAGE plpgsql\n SET search_path TO 'pg_catalog', 'public', 'pg_temp'\nAS $function$\nBEGIN\n  IF public.native_order_edit_allowed(NEW.id) THEN\n    IF TG_OP='DELETE' THEN RETURN OLD; ELSE RETURN NEW; END IF;\n  END IF;\n  IF NOT OLD.booking_managed AND NEW.status IN ('CONFIRMED','PAID') AND NEW.status IS DISTINCT FROM OLD.status\n    AND EXISTS(SELECT 1 FROM order_item i JOIN product p ON p.id=i.product_id WHERE i.order_id=OLD.id\n      AND (i.capacity_group_id IS NOT NULL OR p.capacity_group_id IS NOT NULL)) THEN\n    RAISE EXCEPTION 'ALLOCATION_AWARE_REOPEN_REQUIRED' USING ERRCODE='23514';\n  END IF;\n  IF OLD.booking_managed AND (NEW.booking_managed IS DISTINCT FROM OLD.booking_managed OR NEW.scheduled_for IS DISTINCT FROM OLD.scheduled_for) THEN\n    RAISE EXCEPTION 'ALLOCATION_AWARE_EDIT_REQUIRED' USING ERRCODE='23514';\n  END IF;\n  IF OLD.booking_managed AND OLD.status='CANCELLED' AND NEW.status<>'CANCELLED' THEN\n    IF EXISTS(SELECT 1 FROM order_capacity_allocation a WHERE a.order_id=OLD.id\n      AND NOT EXISTS(SELECT 1 FROM booking_settings s WHERE s.id='default' AND a.block_minute=ANY(s.block_minutes)))\n      THEN RAISE EXCEPTION 'BOOKING_BLOCK_UNAVAILABLE' USING ERRCODE='23514'; END IF;\n    IF EXISTS(SELECT 1 FROM order_capacity_allocation a JOIN customer_order o ON o.id=a.order_id\n      JOIN capacity_group g ON g.id=a.group_id\n      WHERE (o.status<>'CANCELLED' OR o.id=OLD.id)\n        AND EXISTS(SELECT 1 FROM order_capacity_allocation own WHERE own.order_id=OLD.id\n          AND own.pickup_day=a.pickup_day AND own.group_id=a.group_id AND own.block_minute=a.block_minute)\n      GROUP BY a.pickup_day,a.group_id,a.block_minute,g.capacity_per_block HAVING sum(a.quantity)>g.capacity_per_block)\n      THEN RAISE EXCEPTION 'GROUP_CAPACITY' USING ERRCODE='23514'; END IF;\n  END IF;\n  RETURN NEW;\nEND $function$\n"
+    },
+    {
+      "name": "protect_managed_item_totals",
+      "args": "",
+      "security_definer": false,
+      "config": [
+        "search_path=pg_catalog, public, pg_temp"
+      ],
+      "definition": "CREATE OR REPLACE FUNCTION public.protect_managed_item_totals()\n RETURNS trigger\n LANGUAGE plpgsql\n SET search_path TO 'pg_catalog', 'public', 'pg_temp'\nAS $function$\nBEGIN\n  IF public.native_order_edit_allowed(NEW.id) THEN\n    IF TG_OP='DELETE' THEN RETURN OLD; ELSE RETURN NEW; END IF;\n  END IF;\n  IF OLD.booking_managed AND (NEW.item_count<>OLD.item_count OR NEW.subtotal_cents<>OLD.subtotal_cents) THEN\n    RAISE EXCEPTION 'ALLOCATION_AWARE_EDIT_REQUIRED' USING ERRCODE='23514'; END IF;\n  RETURN NEW;\nEND $function$\n"
+    },
+    {
+      "name": "protect_managed_items",
+      "args": "",
+      "security_definer": false,
+      "config": [
+        "search_path=pg_catalog, public, pg_temp"
+      ],
+      "definition": "CREATE OR REPLACE FUNCTION public.protect_managed_items()\n RETURNS trigger\n LANGUAGE plpgsql\n SET search_path TO 'pg_catalog', 'public', 'pg_temp'\nAS $function$\nBEGIN\n  IF public.native_order_edit_allowed(CASE WHEN TG_OP='DELETE' THEN OLD.order_id ELSE NEW.order_id END) THEN\n    IF TG_OP='DELETE' THEN RETURN OLD; ELSE RETURN NEW; END IF;\n  END IF;\n  IF EXISTS(SELECT 1 FROM customer_order WHERE id=OLD.order_id AND booking_managed)\n    OR (TG_OP='UPDATE' AND EXISTS(SELECT 1 FROM customer_order WHERE id=NEW.order_id AND booking_managed))\n    THEN RAISE EXCEPTION 'ALLOCATION_AWARE_EDIT_REQUIRED' USING ERRCODE='23514'; END IF;\n  IF TG_OP='DELETE' THEN RETURN OLD; END IF;\n  RETURN NEW;\nEND $function$\n"
+    },
+    {
+      "name": "reject_order_audit_mutation",
+      "args": "",
+      "security_definer": false,
+      "config": null,
+      "definition": "CREATE OR REPLACE FUNCTION public.reject_order_audit_mutation()\n RETURNS trigger\n LANGUAGE plpgsql\nAS $function$\nBEGIN\n  RAISE EXCEPTION 'Order audit history is append-only' USING ERRCODE = '23514';\nEND\n$function$\n"
+    },
+    {
+      "name": "reject_unallocated_group",
+      "args": "",
+      "security_definer": false,
+      "config": [
+        "search_path=pg_catalog, public, pg_temp"
+      ],
+      "definition": "CREATE OR REPLACE FUNCTION public.reject_unallocated_group()\n RETURNS trigger\n LANGUAGE plpgsql\n SET search_path TO 'pg_catalog', 'public', 'pg_temp'\nAS $function$\nBEGIN\n  IF EXISTS(SELECT 1 FROM customer_order o JOIN product p ON p.id=NEW.product_id\n    WHERE o.id=NEW.order_id AND NOT o.booking_managed AND o.status IN ('CONFIRMED','PAID') AND p.capacity_group_id IS NOT NULL)\n    THEN RAISE EXCEPTION 'ALLOCATION_AWARE_CREATE_REQUIRED' USING ERRCODE='23514'; END IF;\n  RETURN NEW;\nEND $function$\n"
+    }
+  ]
+}

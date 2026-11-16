@@ -11,3 +11,6 @@ functions/lib/
 functions/.env*
 !functions/.env.example
 functions/.secret.local
+
+# Generated environment-specific Firebase configurations (shared sources).
+.firebase-release-*.json

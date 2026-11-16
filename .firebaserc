@@ -1,5 +1,7 @@
 {
   "projects": {
-    "dev": "mtl-service-e3e0c"
+    "default": "mtl-service-e3e0c",
+    "dev": "mtl-service-e3e0c",
+    "production": "mtl-service-production"
   }
 }

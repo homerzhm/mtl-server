@@ -1,0 +1,4 @@
+BEGIN;
+INSERT INTO mtl_operations.probe VALUES(2);
+SELECT 1/0;
+COMMIT;

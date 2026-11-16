@@ -1,0 +1,17 @@
+{
+  "name": "mtl-server-releases",
+  "private": true,
+  "type": "module",
+  "engines": {
+    "node": "22"
+  },
+  "scripts": {
+    "deploy": "node scripts/release/cli.mjs deploy",
+    "release:verify": "node scripts/release/cli.mjs verify",
+    "release:baseline": "node scripts/release/cli.mjs baseline",
+    "release:audit": "node scripts/release/cli.mjs audit",
+    "test": "node --test test/release/unit.test.mjs",
+    "test:releases": "node scripts/release/test-integration.mjs",
+    "release:config": "node scripts/release/cli.mjs configure"
+  }
+}

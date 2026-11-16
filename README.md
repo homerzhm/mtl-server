@@ -3,6 +3,24 @@
 Firebase SQL Connect service `restaurant` in `northamerica-northeast1`; dev project
 `mtl-service-e3e0c`. Keep `schemaValidation: COMPATIBLE`.
 
+## Dev-first releases and production readiness
+
+Use [docs/releases.md](docs/releases.md) for the supported dev-default deployment,
+exact-commit production promotion, private migration ledger, verification and
+one-time provisioning/baseline procedure. Production is `mtl-service-production`.
+Configuration changes and local tests do not deploy cloud resources.
+
+```sh
+npm run deploy
+npm run release:verify -- --accept-dev
+npm run deploy -- --environment production
+```
+
+These commands require the documented one-time baselines and a clean committed
+checkout. See [docs/database-cleanup.md](docs/database-cleanup.md) for the prelaunch
+schema/data review; no table or column deletion is currently justified.
+Historical release notes below describe past operations, not fresh setup commands.
+
 ## Staff admin catalog
 
 The `staff-admin` connector offers `ListProducts`, `GetProduct`, `CreateProduct`,
@@ -380,7 +398,7 @@ The group refactor breaks the unreleased lechon-specific connector/callable cont
 There is no old-app compatibility layer. Deployed to dev on 2026-11-12; existing
 orders and allocations were preserved without a reset. See the release record below.
 
-## Native live Orders and roast booking
+## Historical: native live Orders and roast booking (2026-11-09)
 
 The additive native integration deployed to dev is documented in
 [Live order booking](docs/live-order-booking.md): atomic multi-item creation,
