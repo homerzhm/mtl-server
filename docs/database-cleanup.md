@@ -73,3 +73,11 @@ remove audit history or apply a generated hardened-schema diff wholesale.
 - Locked dependency installation currently reports 12 moderate vulnerabilities.
   Triage the current npm audit report before production; no automatic breaking
   dependency upgrades or lockfile changes are part of this implementation.
+
+### Live readiness audit follow-up
+
+The initial dev contract audit found the item/group FK still used SET NULL.
+`restore-item-capacity-reference.sql` repairs it to the reviewed RESTRICT rule
+without changing rows or disabling audit triggers. A separate capacity CHECK
+formatting difference is explicitly allow-listed: PostgreSQL flattened redundant
+AND parentheses while retaining every predicate. No table/column is removed.

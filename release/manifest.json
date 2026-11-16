@@ -1,15 +1,61 @@
 {
   "version": 1,
-  "components": ["connector", "functions"],
+  "components": [
+    "connector",
+    "functions"
+  ],
   "schemaMaintenance": null,
   "migrations": [
-    {"id": "001-order-integrity", "file": "migrations/order-integrity.sql", "mode": "transaction", "baselineOnly": true},
-    {"id": "002-order-paid-status", "file": "migrations/order-paid-status.sql", "mode": "transaction", "baselineOnly": true},
-    {"id": "003-order-capacity-booking", "file": "migrations/order-capacity-booking.sql", "mode": "transaction", "baselineOnly": true},
-    {"id": "004-order-actions", "file": "migrations/order-actions.sql", "mode": "transaction", "baselineOnly": true},
-    {"id": "005-payment-edits", "file": "migrations/payment-edits.sql", "mode": "transaction", "baselineOnly": true},
-    {"id": "006-order-edits", "file": "migrations/order-edits.sql", "mode": "transaction", "baselineOnly": true}
+    {
+      "id": "001-order-integrity",
+      "file": "migrations/order-integrity.sql",
+      "mode": "transaction",
+      "baselineOnly": true
+    },
+    {
+      "id": "002-order-paid-status",
+      "file": "migrations/order-paid-status.sql",
+      "mode": "transaction",
+      "baselineOnly": true
+    },
+    {
+      "id": "003-order-capacity-booking",
+      "file": "migrations/order-capacity-booking.sql",
+      "mode": "transaction",
+      "baselineOnly": true
+    },
+    {
+      "id": "004-order-actions",
+      "file": "migrations/order-actions.sql",
+      "mode": "transaction",
+      "baselineOnly": true
+    },
+    {
+      "id": "005-payment-edits",
+      "file": "migrations/payment-edits.sql",
+      "mode": "transaction",
+      "baselineOnly": true
+    },
+    {
+      "id": "006-order-edits",
+      "file": "migrations/order-edits.sql",
+      "mode": "transaction",
+      "baselineOnly": true
+    },
+    {
+      "id": "007-restore-item-capacity-reference",
+      "file": "migrations/restore-item-capacity-reference.sql",
+      "verify": "migrations/verify-item-capacity-reference.sql",
+      "mode": "transaction",
+      "baselineOnly": true
+    }
   ],
-  "checks": ["release-unit", "release-integration", "schema", "functions-unit", "emulators"],
+  "checks": [
+    "release-unit",
+    "release-integration",
+    "schema",
+    "functions-unit",
+    "emulators"
+  ],
   "databaseContract": "release/database-contract.json"
 }

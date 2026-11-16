@@ -45,6 +45,15 @@ test('native protection tampering and inherited private grants are detected',asy
     await assert.rejects(verifyPermissions(client,parameters),/Private order edit/);
   });
 });
+test('capacity reference repair restores SET NULL to RESTRICT without altering rows or audit triggers',async()=>{
+  const before=(await client.query("SELECT tgname,tgenabled FROM pg_trigger WHERE tgrelid='order_audit_event'::regclass ORDER BY tgname")).rows;
+  await client.query('ALTER TABLE order_item DROP CONSTRAINT order_item_capacity_group_id_fkey; ALTER TABLE order_item ADD CONSTRAINT order_item_capacity_group_id_fkey FOREIGN KEY(capacity_group_id) REFERENCES capacity_group(id) ON DELETE SET NULL');
+  const sql=await readFile(join(root,'migrations/restore-item-capacity-reference.sql'),'utf8');
+  await client.query(sql);await client.query(sql);
+  assert.equal((await client.query(await readFile(join(root,'migrations/verify-item-capacity-reference.sql'),'utf8'))).rows[0].ok,true);
+  assert.deepEqual((await client.query("SELECT tgname,tgenabled FROM pg_trigger WHERE tgrelid='order_audit_event'::regclass ORDER BY tgname")).rows,before);
+  await verifyContract(client,manifest);
+});
 test('session advisory lock excludes concurrent deployment, releases on failure',async()=>{
   const other=new Client({connectionString:process.env.MTL_RELEASE_TEST_DATABASE_URL});await other.connect();
   try {
@@ -70,8 +79,8 @@ test('migration history enforces ordered prefix, exact checksums and no omitted 
   });
 });
 test('transaction migrations record atomically; failure resumes without reapplying successful DDL',async()=>{
-  const first=await migrateItem('007-probe','test/release/fixtures/007-add-probe.sql','test/release/fixtures/verify-probe.sql');
-  const fail=await migrateItem('008-fail','test/release/fixtures/008-fail.sql','test/release/fixtures/verify-probe.sql');
+  const first=await migrateItem('008-probe','test/release/fixtures/007-add-probe.sql','test/release/fixtures/verify-probe.sql');
+  const fail=await migrateItem('009-fail','test/release/fixtures/008-fail.sql','test/release/fixtures/verify-probe.sql');
   const m={...manifest,migrations:[...manifest.migrations,first,fail]};
   await assert.rejects(applyMigrations(client,m,'commit'),/division by zero/);
   assert.equal((await client.query('SELECT count(*)::int n FROM mtl_operations.probe')).rows[0].n,1);
@@ -80,8 +89,8 @@ test('transaction migrations record atomically; failure resumes without reapplyi
   assert.equal((await client.query('SELECT count(*)::int n FROM mtl_operations.probe')).rows[0].n,1);
 });
 test('nontransactional maintenance resumes after verification failure without duplicating effects',async()=>{
-  const probe=await migrateItem('007-probe','test/release/fixtures/007-add-probe.sql','test/release/fixtures/verify-probe.sql');
-  const item=await migrateItem('008-maintenance','test/release/fixtures/maintenance.mjs','test/release/fixtures/verify-maintenance.sql','maintenance');
+  const probe=await migrateItem('008-probe','test/release/fixtures/007-add-probe.sql','test/release/fixtures/verify-probe.sql');
+  const item=await migrateItem('009-maintenance','test/release/fixtures/maintenance.mjs','test/release/fixtures/verify-maintenance.sql','maintenance');
   const broken={...item,verify:'test/release/fixtures/008-fail.sql'};
   await assert.rejects(applyMigrations(client,{...manifest,migrations:[...manifest.migrations,probe,broken]},'commit'));
   assert.equal((await client.query('SELECT count(*)::int n FROM mtl_operations.maintenance_probe')).rows[0].n,1);
@@ -89,7 +98,7 @@ test('nontransactional maintenance resumes after verification failure without du
   await applyMigrations(client,{...manifest,migrations:[...manifest.migrations,probe,item]},'commit');
   assert.equal((await client.query('SELECT count(*)::int n FROM mtl_operations.maintenance_probe')).rows[0].n,1);
   // Test history is isolated from subsequent promotion assertions.
-  await client.query("DELETE FROM mtl_operations.migration WHERE id LIKE '007-%' OR id LIKE '008-%'");
+  await client.query("DELETE FROM mtl_operations.migration WHERE id LIKE '008-%' OR id LIKE '009-%'");
 });
 test('component retries skip verified completed stages, retain failure and reject drift',async()=>{
   const commit='abc123';await startRelease(client,commit,manifest);

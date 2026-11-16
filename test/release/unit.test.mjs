@@ -119,3 +119,16 @@ test('full cloud verification checks identities, scheduler and backups without f
   functionResources[0].serviceConfig.serviceAccountEmail='wrong@another-project.iam.gserviceaccount.com';
   await assert.rejects(verifyCloud(t,p,'all',get),/runtime mismatch/);
 });
+
+test('operator authentication defaults to ADC and rejects incomplete or unknown alternate modes',async()=>{
+  const {operatorAuth}=await import('../../scripts/release/auth.mjs');
+  const previous=process.env.MTL_RELEASE_AUTH,cli=process.env.MTL_FIREBASE_CLI;
+  try {
+    delete process.env.MTL_RELEASE_AUTH;assert.equal(typeof operatorAuth().request,'function');
+    process.env.MTL_RELEASE_AUTH='unknown';assert.throws(()=>operatorAuth(),/Choose adc or firebase/);
+    process.env.MTL_RELEASE_AUTH='firebase';delete process.env.MTL_FIREBASE_CLI;assert.throws(()=>operatorAuth(),/requires MTL_FIREBASE_CLI/);
+  } finally {
+    if(previous===undefined)delete process.env.MTL_RELEASE_AUTH;else process.env.MTL_RELEASE_AUTH=previous;
+    if(cli===undefined)delete process.env.MTL_FIREBASE_CLI;else process.env.MTL_FIREBASE_CLI=cli;
+  }
+});

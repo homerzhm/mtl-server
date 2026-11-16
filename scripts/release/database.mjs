@@ -1,7 +1,8 @@
 import {createRequire} from 'node:module';
 import {readFile} from 'node:fs/promises';
 import {pathToFileURL} from 'node:url';
-import {root, safePath, digest, json} from './config.mjs';
+import {root, safePath, digest, json, stableJson} from './config.mjs';
+import {operatorAuth} from './auth.mjs';
 const require = createRequire(`${root}/functions/package.json`);
 export const {Client} = require('pg');
 
@@ -9,7 +10,7 @@ export async function connect(t) {
   const {Connector, AuthTypes} = require('@google-cloud/cloud-sql-connector');
   const user = process.env[`MTL_RELEASE_${t.name.toUpperCase()}_SQL_USER`];
   if (!user || user.includes('@') && !user.includes(t.project) && user.endsWith('.iam')) throw new Error('Set the environment-specific release operator SQL user');
-  const connector = new Connector();
+  const connector = new Connector({auth:operatorAuth(t)});
   try {
     const config = await connector.getOptions({instanceConnectionName:t.connection, authType:AuthTypes.IAM});
     const client = new Client({...config,user,database:'restaurant',connectionTimeoutMillis:15000});
@@ -157,7 +158,10 @@ export async function verifyContract(client,manifest) {
     if(!Array.isArray(actual[section])) throw new Error('Invalid database contract');
     for(const row of rows) {
       // Compare semantic object definitions, not OIDs or environment-specific owners.
-      if(!actual[section].some(value=>JSON.stringify(value)===JSON.stringify(row))) throw new Error(`Database contract mismatch: ${section} ${row.table_name??''}.${row.name??row.column_name??''}`);
+      const {equivalentDefinitions,...definition}=row;
+      if(equivalentDefinitions && (section!=='constraints'||row.contype!=='c'||!Array.isArray(equivalentDefinitions)||equivalentDefinitions.some(value=>typeof value!=='string'))) throw new Error('Equivalent definitions are only allowed for reviewed CHECK formatting');
+      const candidates=[definition,...(equivalentDefinitions??[]).map(value=>({...definition,definition:value}))];
+      if(!actual[section].some(value=>candidates.some(candidate=>stableJson(value)===stableJson(candidate)))) throw new Error(`Database contract mismatch: ${section} ${row.table_name??''}.${row.name??row.column_name??''}`);
     }
   }
   if(Object.keys(expected).length!==5 || !expected.routines?.length || !expected.triggers?.length) throw new Error('Incomplete database contract');

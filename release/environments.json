@@ -6,7 +6,7 @@
   },
   "production": {
     "project": "mtl-service-production",
-    "instance": "mtl-restaurant-production",
+    "instance": "mtl-restaurant-production-db",
     "region": "northamerica-northeast2"
   }
 }

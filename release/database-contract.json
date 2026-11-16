@@ -1360,7 +1360,10 @@
       "name": "capacity_values_check",
       "contype": "c",
       "definition": "CHECK ((((block_minute >= 0) AND (block_minute <= 1439)) AND ((block_minute % 15) = 0) AND (quantity > 0)))",
-      "convalidated": true
+      "convalidated": true,
+      "equivalentDefinitions": [
+        "CHECK (((block_minute >= 0) AND (block_minute <= 1439) AND ((block_minute % 15) = 0) AND (quantity > 0)))"
+      ]
     },
     {
       "table_name": "order_capacity_allocation",

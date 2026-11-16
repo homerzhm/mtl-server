@@ -1,12 +1,12 @@
-import {createRequire} from 'node:module';
 import {readdir, readFile} from 'node:fs/promises';
 import {join} from 'node:path';
 import {root, functions, digest, stableJson} from './config.mjs';
-const require=createRequire(`${root}/functions/package.json`);
+import {operatorAuth} from './auth.mjs';
 export async function googleGet(url) {
-  const {GoogleAuth}=require('google-auth-library');
-  const auth=new GoogleAuth({scopes:['https://www.googleapis.com/auth/cloud-platform']});
-  const response=await auth.request({url,method:'GET'});
+  const auth=operatorAuth();
+  const parsed=new URL(url),params=Object.fromEntries(parsed.searchParams);
+  parsed.search='';
+  const response=await auth.request({url:parsed.toString(),method:'GET',params});
   return response.data;
 }
 async function sources(directory) {

@@ -54,11 +54,11 @@ Create ignored `functions/.env.mtl-service-e3e0c` and
 `functions/.env.mtl-service-production`, with exactly these eight parameters:
 
 ```dotenv
-STAFF_SQL_INSTANCE=mtl-service-production:northamerica-northeast2:mtl-restaurant-production
+STAFF_SQL_INSTANCE=mtl-service-production:northamerica-northeast2:mtl-restaurant-production-db
 STAFF_SQL_DATABASE=restaurant
 STAFF_RUNTIME_SERVICE_ACCOUNT=mtl-staff-functions@mtl-service-production.iam.gserviceaccount.com
 STAFF_SQL_USER=mtl-staff-functions@mtl-service-production.iam
-ORDERS_SQL_INSTANCE=mtl-service-production:northamerica-northeast2:mtl-restaurant-production
+ORDERS_SQL_INSTANCE=mtl-service-production:northamerica-northeast2:mtl-restaurant-production-db
 ORDERS_SQL_DATABASE=restaurant
 ORDERS_RUNTIME_SERVICE_ACCOUNT=mtl-orders-functions@mtl-service-production.iam.gserviceaccount.com
 ORDERS_SQL_USER=mtl-orders-functions@mtl-service-production.iam
@@ -82,6 +82,13 @@ connector. The same ADC identity needs authorized access to both projects for
 promotion, or use an authorized impersonated identity with access to both. This is
 operator access, never a runtime grant. No password/connection-URL override exists.
 Release commands reject emulator override variables.
+
+If ADC is unavailable but Firebase CLI already has the intended operator login,
+set `MTL_RELEASE_AUTH=firebase` and `MTL_FIREBASE_CLI` to its absolute CLI entrypoint.
+This operator-only mode reuses that login for metadata reads and the SQL connector;
+the selected account must match the environment-specific release SQL username.
+It never changes runtime authentication or stores new credentials. Default auth
+remains `adc`; unknown auth modes are rejected.
 
 The operator needs Cloud SQL Client/Instance User, appropriate database migration
 ownership/DDL rights, exclusive access to `mtl_operations`, read access to SQL
@@ -144,7 +151,9 @@ permissions and least-privilege runtime access throughout maintenance.
 contract captured from a fresh local schema plus native migrations. It checks
 columns/defaults/nullability, indexes, constraints, triggers (including enabled
 state), and non-extension routines (including security-definer/search-path
-settings). Additional live objects are reported by audit rather than dropped.
+settings). The capacity CHECK has one reviewed alternative spelling for PostgreSQL’s
+flattened AND parentheses; all predicates and validation state must still match.
+Foreign-key delete actions never use formatting alternatives. Additional live objects are reported by audit rather than dropped.
 A PostgreSQL-version-dependent definition mismatch requires human investigation;
 never weaken the checks automatically to make a deployment pass.
 
@@ -195,7 +204,7 @@ normal workflow works. Baseline adoption never replays the native SQL files.
 Do this only after an explicit cloud setup/deployment request.
 
 1. Inspect the target project's existing resources first. Production defaults to
-   `mtl-restaurant-production` only if no instance has already been selected.
+   `mtl-restaurant-production-db` only if no instance has already been selected.
    Set the actual mapping in `release/environments.json` before the first commit
    accepted in dev. Match PostgreSQL version/flags deliberately; production sizing
    and high availability may exceed dev. Retain three reserved connections plus
@@ -222,7 +231,7 @@ Do this only after an explicit cloud setup/deployment request.
    generated schema and deploy it before native hardening. Keep business access
    closed during setup. Install the native SQL in this order:
    `order-integrity`, `order-paid-status`, `order-capacity-booking`, `order-actions`,
-   `payment-edits`, `order-edits`. Apply grants and verify effective private access.
+   `payment-edits`, `order-edits`, then `restore-item-capacity-reference`. Apply grants and verify effective private access.
    Do not reuse this fresh-database schema procedure on populated dev.
 7. Deploy the matching connector and all seven Functions to initialize the cloud
    resources. Confirm scheduler readiness. Bootstrap an explicit production Google
@@ -238,7 +247,10 @@ Do this only after an explicit cloud setup/deployment request.
    `npm run release:baseline -- --environment production --expect-empty`.
    Baseline verifies actual objects/resources and records native checksums only;
    it never asserts that code was deployed from this commit.
-10. Audit and baseline existing dev with `npm run release:baseline` (no
+10. Before baselining existing dev, apply the reviewed
+    `restore-item-capacity-reference.sql` transaction if its item/group FK uses
+    SET NULL. It replaces only that FK with RESTRICT, preserves rows and audit
+    triggers, and is repeatable. Audit and baseline existing dev with `npm run release:baseline` (no
     `--expect-empty`, because its business rows are retained). Deploy and verify
     the new managed dev release, then promote it to production. The first managed
     release must deploy both Functions and connector even after baseline adoption.
