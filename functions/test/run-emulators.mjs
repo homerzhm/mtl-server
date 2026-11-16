@@ -28,9 +28,11 @@ try {
   await writeFile(join(source,'.env.local'),[
     'STAFF_SQL_INSTANCE=unused-emulator','STAFF_SQL_USER=postgres','STAFF_SQL_DATABASE=restaurant',
     'STAFF_RUNTIME_SERVICE_ACCOUNT=staff-tests@demo-mtl.iam.gserviceaccount.com',
+    'STAFF_REGION=northamerica-northeast1',
     `STAFF_LOCAL_DATABASE_URL=${url}`,
     'ORDERS_SQL_INSTANCE=unused-emulator','ORDERS_SQL_USER=postgres','ORDERS_SQL_DATABASE=restaurant',
     'ORDERS_RUNTIME_SERVICE_ACCOUNT=orders-tests@demo-mtl.iam.gserviceaccount.com',
+    'ORDERS_REGION=northamerica-northeast1',
     `ORDERS_LOCAL_DATABASE_URL=${url}`,
   ].join('\n'));
   const config = join(directory,'firebase.json');

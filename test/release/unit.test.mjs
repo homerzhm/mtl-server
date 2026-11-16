@@ -11,7 +11,7 @@ test('default target is dev and command always has explicit project/config',asyn
   const t=await target(options([]).environment);
   assert.equal(t.project,'mtl-service-e3e0c');
   assert.deepEqual(firebaseArgs(t,'config.json','deploy',['--only','functions:server']),['deploy','--project','mtl-service-e3e0c','--config','config.json','--only','functions:server']);
-  const prod=await target(options(['--environment','production']).environment);assert.equal(prod.project,'mtl-service-production');assert.equal(prod.region,'northamerica-northeast2');assert.equal(prod.functionsRegion,'northamerica-northeast1');
+  const prod=await target(options(['--environment','production']).environment);assert.equal(prod.project,'mtl-service-production');assert.equal(prod.region,'northamerica-northeast2');assert.equal(prod.functionsRegion,'northamerica-northeast2');
   assert.throws(()=>options(['--project','production']));assert.throws(()=>options(['--environment','prod']));assert.throws(()=>options(['--config','evil.json']));
 });
 test('generated environment configurations share all sources and function settings',async()=>{
@@ -32,13 +32,13 @@ test('generated environment configurations share all sources and function settin
 function parameters(t) {
   return Object.fromEntries(['STAFF','ORDERS'].flatMap(topic=>{
     const email=`mtl-${topic.toLowerCase()}-functions@${t.project}.iam.gserviceaccount.com`;
-    return [[`${topic}_SQL_INSTANCE`,t.connection],[`${topic}_SQL_DATABASE`,'restaurant'],[`${topic}_RUNTIME_SERVICE_ACCOUNT`,email],[`${topic}_SQL_USER`,email.replace('.gserviceaccount.com','')]];
+    return [[`${topic}_REGION`,t.functionsRegion],[`${topic}_SQL_INSTANCE`,t.connection],[`${topic}_SQL_DATABASE`,'restaurant'],[`${topic}_RUNTIME_SERVICE_ACCOUNT`,email],[`${topic}_SQL_USER`,email.replace('.gserviceaccount.com','')]];
   }));
 }
 test('cloud parameter validation rejects cross-project identities, local URLs, missing settings and shared identities',async()=>{
   const t=await target('production'),p=parameters(t);assert.deepEqual(validateParameters(t,p),p);
   for(const bad of [{...p,ORDERS_SQL_INSTANCE:(await target('dev')).connection},{...p,STAFF_RUNTIME_SERVICE_ACCOUNT:'staff@mtl-service-e3e0c.iam.gserviceaccount.com'},
-    {...p,ORDERS_LOCAL_DATABASE_URL:'postgresql://127.0.0.1/db'},{...p,STAFF_SQL_DATABASE:undefined},
+    {...p,ORDERS_LOCAL_DATABASE_URL:'postgresql://127.0.0.1/db'},{...p,STAFF_SQL_DATABASE:undefined},{...p,STAFF_REGION:'northamerica-northeast1'},
     {...p,ORDERS_RUNTIME_SERVICE_ACCOUNT:p.STAFF_RUNTIME_SERVICE_ACCOUNT,ORDERS_SQL_USER:p.STAFF_SQL_USER}]) assert.throws(()=>validateParameters(t,bad));
   assert.throws(()=>parseEnv('KEY=a\nKEY=b'));assert.equal(parseEnv('# comment\nKEY="abc"').KEY,'abc');
 });
@@ -101,14 +101,14 @@ test('full cloud verification checks identities, scheduler and backups without f
     const staff=['registerStaffSignIn','setStaffRoles','reconcileStaffRoles'].includes(name),topic=staff?'STAFF':'ORDERS';
     return {name:`projects/${t.project}/locations/${t.functionsRegion}/functions/${name}`,labels:{'firebase-functions-codebase':'server'},state:'ACTIVE',updateTime:'2026-11-16T00:00:00Z',buildConfig:{runtime:'nodejs22'},
       serviceConfig:{uri:`https://${name.toLowerCase()}-example.run.app`,serviceAccountEmail:p[`${topic}_RUNTIME_SERVICE_ACCOUNT`],maxInstanceCount:1,maxInstanceRequestConcurrency:2,timeoutSeconds:staff?120:60,
-        environmentVariables:Object.fromEntries(['SQL_INSTANCE','SQL_USER','SQL_DATABASE'].map(suffix=>[`${topic}_${suffix}`,p[`${topic}_${suffix}`]]))}};
+        environmentVariables:Object.fromEntries(['SQL_INSTANCE','SQL_USER','SQL_DATABASE','REGION'].map(suffix=>[`${topic}_${suffix}`,p[`${topic}_${suffix}`]]))}};
   });
   let attempts=0,schedulerTarget='https://reconcilestaffroles-example.run.app/';
   const instance={connectionName:t.connection,region:t.region,state:'RUNNABLE',databaseVersion:'POSTGRES_18',settings:{databaseFlags:[{name:'cloudsql.iam_authentication',value:'on'}],backupConfiguration:{enabled:true,pointInTimeRecoveryEnabled:true}}};
   const get=async url=>{
     if(url.endsWith('/schemas/main')){assert.ok(url.includes('/locations/northamerica-northeast2/'));return schema;}
     if(url.endsWith('/connectors/staff-admin'))return connector;
-    if(url.endsWith('/functions')){assert.ok(url.includes('/locations/northamerica-northeast1/'));return {functions:functionResources};}
+    if(url.endsWith('/functions')){assert.ok(url.includes('/locations/northamerica-northeast2/'));return {functions:functionResources};}
     if(url.includes('cloudscheduler'))return {name:'scheduler',state:'ENABLED',schedule:'every 1 minutes',lastAttemptTime:`run-${++attempts}`,httpTarget:{uri:schedulerTarget,httpMethod:'POST',oidcToken:{serviceAccountEmail:p.STAFF_RUNTIME_SERVICE_ACCOUNT}}};
     if(url.includes('sqladmin'))return instance;
     assert.fail(url);

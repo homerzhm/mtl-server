@@ -49,7 +49,7 @@ export async function verifyCloud(t,parameters,component='all',get=googleGet) {
       if(f.state!=='ACTIVE'||f.buildConfig?.runtime!=='nodejs22'||f.serviceConfig?.serviceAccountEmail!==parameters[`${topic}_RUNTIME_SERVICE_ACCOUNT`] ||
           f.serviceConfig?.maxInstanceCount!==1 || f.serviceConfig?.maxInstanceRequestConcurrency!==2 || f.serviceConfig?.timeoutSeconds!==(staff?120:60)) throw new Error(`Function runtime mismatch: ${name}`);
       const env=f.serviceConfig.environmentVariables??{};
-      for(const suffix of ['SQL_INSTANCE','SQL_USER','SQL_DATABASE']) if(env[`${topic}_${suffix}`]!==parameters[`${topic}_${suffix}`]) throw new Error(`Function database parameters differ: ${name}`);
+      for(const suffix of ['SQL_INSTANCE','SQL_USER','SQL_DATABASE','REGION']) if(env[`${topic}_${suffix}`]!==parameters[`${topic}_${suffix}`]) throw new Error(`Function database parameters differ: ${name}`);
       if(Object.keys(env).some(k=>k.includes('EMULATOR')||k.endsWith('LOCAL_DATABASE_URL'))) throw new Error(`Emulator settings deployed: ${name}`);
     }
     const job=await get(`https://cloudscheduler.googleapis.com/v1/${functionsBase}/jobs/firebase-schedule-reconcileStaffRoles-${t.functionsRegion}`);

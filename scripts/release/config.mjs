@@ -23,8 +23,8 @@ export function options(args) {
 export async function target(name) {
   const environments = await json(join(root,'release/environments.json'));
   const t = environments[name];
-  if (!t || t.project !== (name === 'dev' ? 'mtl-service-e3e0c' : 'mtl-service-production') || !/^[a-z][a-z0-9-]+$/.test(t.instance) || !['northamerica-northeast1','northamerica-northeast2'].includes(t.region)) throw new Error('Invalid environment mapping');
-  return {...t, name, functionsRegion:region, connection:`${t.project}:${t.region}:${t.instance}`};
+  if (!t || t.project !== (name === 'dev' ? 'mtl-service-e3e0c' : 'mtl-service-production') || !/^[a-z][a-z0-9-]+$/.test(t.instance) || !['northamerica-northeast1','northamerica-northeast2'].includes(t.region) || !['northamerica-northeast1','northamerica-northeast2'].includes(t.functionsRegion)) throw new Error('Invalid environment mapping');
+  return {...t, name, connection:`${t.project}:${t.region}:${t.instance}`};
 }
 export function safePath(path) {
   if (typeof path !== 'string' || !path || path.includes('\\')) throw new Error('Invalid repository path');
@@ -71,12 +71,12 @@ export function parseEnv(text) {
   return result;
 }
 export function validateParameters(t, parameters) {
-  const allowed = ['STAFF','ORDERS'].flatMap(topic=>['SQL_INSTANCE','SQL_USER','SQL_DATABASE','RUNTIME_SERVICE_ACCOUNT'].map(k=>`${topic}_${k}`));
+  const allowed = ['STAFF','ORDERS'].flatMap(topic=>['SQL_INSTANCE','SQL_USER','SQL_DATABASE','RUNTIME_SERVICE_ACCOUNT','REGION'].map(k=>`${topic}_${k}`));
   if (Object.keys(parameters).some(key=>!allowed.includes(key))) throw new Error('Unexpected cloud parameter (emulator/credential settings are forbidden)');
   for (const topic of ['STAFF','ORDERS']) {
     const email = parameters[`${topic}_RUNTIME_SERVICE_ACCOUNT`];
     if (!email || !new RegExp(`^[a-z][a-z0-9-]*@${t.project}\\.iam\\.gserviceaccount\\.com$`).test(email) ||
-        parameters[`${topic}_SQL_INSTANCE`] !== t.connection || parameters[`${topic}_SQL_DATABASE`] !== 'restaurant' ||
+        parameters[`${topic}_REGION`] !== t.functionsRegion || parameters[`${topic}_SQL_INSTANCE`] !== t.connection || parameters[`${topic}_SQL_DATABASE`] !== 'restaurant' ||
         parameters[`${topic}_SQL_USER`] !== email.replace('.gserviceaccount.com','')) throw new Error(`${topic} parameters do not match ${t.project}`);
   }
   if (parameters.STAFF_RUNTIME_SERVICE_ACCOUNT === parameters.ORDERS_RUNTIME_SERVICE_ACCOUNT) throw new Error('Staff and Orders require separate identities');

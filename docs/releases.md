@@ -24,8 +24,9 @@ Use native Node 22, npm and a current Firebase CLI. Install locked dependencies 
 
 Production is `mtl-service-production`. Its database and SQL Connect service are
 in Toronto (`northamerica-northeast2`); dev stays in Montréal
-(`northamerica-northeast1`). Functions and their scheduler keep the existing
-`northamerica-northeast1` endpoint region in both projects. The Cloud SQL connector
+(`northamerica-northeast1`). Production Functions and their scheduler also use Toronto; dev Functions and
+its scheduler stay in Montréal. Topic-specific `STAFF_REGION` and `ORDERS_REGION`
+parameters select the endpoint region without changing exported function names. The Cloud SQL connector
 uses the database region in each environment’s instance connection name. No code, schema or connector copies are
 maintained. The generated `.firebase-release-<environment>-<pid>.json` and ignored
 `.firebase/releases/<environment>-<pid>/dataconnect.yaml` select each SQL instance while
@@ -51,13 +52,15 @@ tests or changing configuration never deploys.
 ### Operator configuration
 
 Create ignored `functions/.env.mtl-service-e3e0c` and
-`functions/.env.mtl-service-production`, with exactly these eight parameters:
+`functions/.env.mtl-service-production`, with exactly these ten parameters:
 
 ```dotenv
+STAFF_REGION=northamerica-northeast2
 STAFF_SQL_INSTANCE=mtl-service-production:northamerica-northeast2:mtl-restaurant-production-db
 STAFF_SQL_DATABASE=restaurant
 STAFF_RUNTIME_SERVICE_ACCOUNT=mtl-staff-functions@mtl-service-production.iam.gserviceaccount.com
 STAFF_SQL_USER=mtl-staff-functions@mtl-service-production.iam
+ORDERS_REGION=northamerica-northeast2
 ORDERS_SQL_INSTANCE=mtl-service-production:northamerica-northeast2:mtl-restaurant-production-db
 ORDERS_SQL_DATABASE=restaurant
 ORDERS_RUNTIME_SERVICE_ACCOUNT=mtl-orders-functions@mtl-service-production.iam.gserviceaccount.com
@@ -283,3 +286,20 @@ Run those suites sequentially. All targets are loopback/demo-mtl. The Functions
 integration runner also runs all four connector suites. Release tests exercise
 empty initialization, native guards/grants, locks, checksums, failed migrations,
 idempotent maintenance, partial component retries and promotion rejection.
+
+## One-time Functions region cutover
+
+Moving production endpoints from Montréal to Toronto creates new regional
+resources; old client URLs do not redirect automatically. Verify the release in
+dev first, using the same names and topic defaults in Montréal. Before production
+cutover, pause its old reconciliation job, verify no pending role synchronization
+or business requests, and delete only the seven old Montréal Functions. Wait for
+deletion before deploying Toronto so the configured pool ceiling stays fourteen
+rather than twenty-eight on the 25-connection instance. This is a brief maintenance
+window; database rows and native protections are unchanged.
+
+Create the Toronto build-artifact repository and its 30-day cleanup policy before
+first deploy. Promote the exact verified commit with production parameters both
+set to `northamerica-northeast2`. Verify all seven target Functions, the Toronto
+scheduler's successful execution, and absence of Montréal Functions/jobs afterward.
+Production iOS must select Toronto for callable Functions as well as SQL Connect.
