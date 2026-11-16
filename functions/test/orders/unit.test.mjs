@@ -84,3 +84,23 @@ test('received deposits validate independently without changing legacy canonical
     assert.throws(()=>validateAction({...edit,...patch}),{code:'invalid-argument'});
   assert.throws(()=>validateAction({...legacy,paymentId:edit.paymentId}),{code:'invalid-argument'});
 });
+
+
+import {validateEdit} from '../../lib/orders/edits.js';
+import {validateAction} from '../../lib/orders/actions.js';
+test('edit validation permits saved snapshots but rejects duplicate IDs and unexpected fields',()=>{
+  const {depositRequiredCents,...v}=input();const edit={...v,action:'EDIT',requestId:randomUUID(),expectedRevision:3};
+  delete edit.items[0].expectedRevision;
+  assert.equal(validateEdit(edit).items[0].expectedRevision,null);
+  for(const patch of [{expectedRevision:-1},{items:[edit.items[0],edit.items[0]]},{discountCents:100},{requestId:'bad'}])
+    assert.throws(()=>validateEdit({...edit,...patch}),{code:'invalid-argument'});
+});
+test('cancellation requires explicit refund and retains old canonical action shapes',()=>{
+  const old={requestId:randomUUID(),id:randomUUID(),expectedRevision:0,action:'PAID',amountCents:null};
+  assert.deepEqual(validateAction(old),old);
+  const cancel={...old,action:'CANCEL',refundAmountCents:0,reason:'  changed date  '};
+  assert.equal(validateAction(cancel).reason,'changed date');
+  for(const patch of [{refundAmountCents:undefined},{refundAmountCents:-1},{refundAmountCents:0.1},{reason:'x'.repeat(1001)}])
+    assert.throws(()=>validateAction({...cancel,...patch}),{code:'invalid-argument'});
+  assert.throws(()=>validateAction({...old,refundAmountCents:0}),{code:'invalid-argument'});
+});

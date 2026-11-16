@@ -448,3 +448,119 @@ payment or order status writes were used for verification.
 
 This release targets new managed orders; legacy payment compatibility is outside
 the release scope.
+
+## Native active-order editing and cancellation
+
+`updateStaffOrder` now accepts EDIT and CANCEL under the existing Google Staff OR
+Admin policy. The existing endpoint/runtime budget is unchanged. Standalone
+connector refunds retain admin-only authorization; only the atomic active-order
+CANCEL permits staff to record cash already returned.
+
+EDIT accepts `{action:"EDIT",requestId,id,expectedRevision,items,clientId,
+contactPhoneNumber,scheduledFor,expectedSettingsRevision,expectedGroups,
+allocations,notes}`. Remaining items carry `{id,productId,quantity}`; added items
+also carry `expectedRevision`. Saved IDs retain name, prices, group snapshot,
+creation timestamp and line notes. Reusing an ID for a different product is invalid.
+Added products must be active at the requested revision. Client and phone must
+match a current locked profile, or retain the unchanged saved client/phone snapshot.
+No client requires a null phone. Quantities are 1–99 and exact Int32 totals cannot
+fall below the saved discount. Payments, discounts and deposit fields are unchanged.
+
+Both Confirmed and Paid may be edited. An existing agreed total follows the
+reviewed subtotal less discount; Paid returns to Confirmed only when the ledger
+no longer covers it. Unchanged pickup and exact placements may be past. Any
+schedule change must satisfy future timing and the current block configuration.
+Check capacity without own occupancy; unchanged/decreased slots may remain over a
+lower historical limit and retain archived group snapshots. New/increased places
+cannot use archived groups. Item totals, parent revision, replacements,
+ORDER_EDITED before/after audit and request identity commit atomically.
+
+CANCEL accepts `{action:"CANCEL",requestId,id,expectedRevision,refundAmountCents,
+reason?}` (amountCents may be absent/null). The explicit refund is a nonnegative
+safe integer no greater than net paid; the retained charge must fit nonnegative
+Int32. Reason is optional, trimmed, at most 1,000 UTF-16 code units. Zero net paid
+cancels with zero refund/charge. Negative net paid requires ledger correction.
+Only Confirmed/Paid may cancel. Preserve original item values and final total;
+set cancellation_total_cents to net paid minus this refund. Assign positive
+SUCCEEDED refunds to successful CASH receipts oldest received_at then ID first,
+subtracting successful prior refunds. Insufficient eligible cash rolls back.
+ORDER_CANCELLED records refund identities/amounts, retained charge, reason,
+server actor/time and before/after lifecycle. This records physical cash returned;
+it never invokes a payment provider. Cancelled status releases occupancy while
+allocation rows remain available for history.
+
+Both actions share OrderActionRequest actor/canonical-payload ownership and the
+order-action request lock. Matching committed retries return before current
+revision/time/catalog checks. Old PAYMENT/PAID/PICKUP/PAYMENT_EDIT normalization
+and stored hashes remain unchanged. Acquire booking-capacity before order and
+receipt locks. Runtime or transport errors never authorize a new request identity.
+The iOS account/order journal restores the exact submission for explicit retry;
+no automatic replay or instruction to return cash again.
+
+### Local migration and release sequence
+
+1. Review/apply `migrations/order-edits.sql` after `payment-edits.sql`. It is
+   repeatable and changes no connector operation or existing table shape.
+   First review/deploy the additive NativeOrderEditContext @table schema using
+   established compatible schema maintenance. Review the explicit-project SQL
+   diff and preserve all native constraints/triggers; never apply a generated
+   hardened-order diff wholesale. The schema addition has no connector operation.
+   It adds a private native_order_edit_context table plus pinned-search-path
+   routines. Only the definer edit routine can populate this context; no client
+   role or caller-controlled session flag can enable the guard exception.
+2. Use the trusted migration owner for function ownership. Keep PUBLIC and the
+   SQL Connect runtime without EXECUTE on apply_native_order_edit, and keep all
+   application roles without context-table privileges. Grant the selected ORDERS
+   database runtime (substitute the actual role using identifier-safe SQL):
+
+   ```sql
+   GRANT EXECUTE ON FUNCTION public.apply_native_order_edit(uuid,integer,jsonb,jsonb,jsonb) TO orders_runtime;
+   GRANT UPDATE(cancelled_at,cancellation_total_cents) ON public.customer_order TO orders_runtime;
+   GRANT INSERT ON public.refund TO orders_runtime;
+   ```
+
+   Retain existing SELECT on client/product/order/items/configuration/allocations/
+   payment/refund/action requests, UPDATE(amount_cents,status) on payment (needed
+   for receipt locks), existing order-action INSERT and parent UPDATE grants, and
+   EXECUTE on lock_order_creation_sources. Do not grant item/allocation DML,
+   context-table access, or product/client UPDATE. The read-only predicate
+   native_order_edit_allowed can be executed by guard callers but cannot open a
+   context. Review future generated schema diffs to preserve this private table
+   and native guards; reapply order-edits.sql last after any older booking migration.
+   SQL Connect owner defaults can grant newly created tables/routines directly to
+   its reader/writer roles. The migration explicitly revokes those private-context
+   and edit-routine grants as well as PUBLIC access; verify effective privileges
+   after maintenance rather than relying on PUBLIC revocation alone.
+3. Deploy only compatible `updateStaffOrder`, with an explicit project, before
+   releasing iOS. Deployment is a separate authorized operator action; none is
+   performed by implementation or tests. No new endpoint, activation gate,
+   bootstrap, backfill or generated SDK is needed.
+
+Run `npm --prefix functions test` and `npm --prefix functions run test:emulators`
+with native Node 22/current Firebase CLI. Tests use only demo-mtl emulators and
+disposable PostgreSQL, including actual restricted runtime roles, rollback,
+concurrent edits, saved snapshots, lowered historical limits, split/prior refunds,
+negative net, cancellation capacity release and replay ownership.
+
+### Deployed to dev 2026-11-16
+
+Passed 14 unit tests, 98 emulator/integration tests and standalone SQL Connect
+schema validation using native Node 22. The regression suite includes inherited
+SQL Connect reader/writer privileges and repeatable private-access revocation.
+
+Reviewed the explicit dev SQL diff. Added only NativeOrderEditContext through
+COMPATIBLE schema maintenance with transactional write-pause guards, restoring
+all existing native constraints before resuming writes. PostgreSQL flattened
+redundant parentheses in the capacity CHECK without changing its predicates.
+Applied `migrations/order-edits.sql` and the documented limited runtime grants;
+verified all 137 existing constraints and 23 existing triggers were preserved.
+Verified SQL Connect reader/writer roles have no private-context privileges or
+edit-routine EXECUTE; only the migration owner and Orders runtime may execute
+the edit routine. The Orders runtime has no context-table writes or product/client
+UPDATE. The deployed connector was unchanged, and no maintenance guards remain.
+
+Deployed only `functions:server:updateStaffOrder` to `dev` (`mtl-service-e3e0c`).
+Verified its new revision is ACTIVE with the dedicated ORDERS identity,
+maxInstances 1 and concurrency 2. Anonymous requests return 401 UNAUTHENTICATED;
+the other six functions are unchanged. Verification performed no live payment,
+refund or order lifecycle writes.

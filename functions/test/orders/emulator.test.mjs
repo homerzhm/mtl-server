@@ -5,6 +5,7 @@ import {readFile} from 'node:fs/promises';
 import pg from 'pg';
 import {OrderCreationService} from '../../lib/orders/service.js';
 import {BookingConfigurationService,BookingAvailabilityService} from '../../lib/orders/capacity.js';
+import {OrderEditService} from '../../lib/orders/edits.js';
 import {OrderActionService} from '../../lib/orders/actions.js';
 assert.equal(process.env.GCLOUD_PROJECT,'demo-mtl');
 const pool=new pg.Pool({connectionString:'postgresql://postgres:test-only@127.0.0.1:15432/restaurant',max:8});
@@ -24,7 +25,7 @@ before(async()=>{
   const token=`${encode({alg:'none'})}.${encode({sub:actor.uid,aud:'demo-mtl',iss:'https://securetoken.google.com/demo-mtl',staff:true,firebase:{sign_in_provider:'google.com'},iat:Math.floor(Date.now()/1000),exp:Math.floor(Date.now()/1000)+3600})}.`;
   const r=await fetch('http://127.0.0.1:9399/v1/projects/demo-mtl/locations/northamerica-northeast1/services/restaurant/connectors/staff-admin:executeQuery',{method:'POST',headers:{'Content-Type':'application/json','x-firebase-auth-token':token},body:JSON.stringify({operationName:'ListOrders',variables:{}})});
   const result=await r.json();assert.equal(!result.errors?.length,true,JSON.stringify(result));
-  for(const migration of ['order-integrity.sql','order-paid-status.sql','order-capacity-booking.sql','order-actions.sql','payment-edits.sql'])await pool.query(await readFile(new URL(`../../../migrations/${migration}`,import.meta.url),'utf8'));
+  for(const migration of ['order-integrity.sql','order-paid-status.sql','order-capacity-booking.sql','order-actions.sql','payment-edits.sql','order-edits.sql'])await pool.query(await readFile(new URL(`../../../migrations/${migration}`,import.meta.url),'utf8'));
   await pool.query(await readFile(new URL('../../../migrations/order-actions.sql',import.meta.url),'utf8')); // Repeatable upgrade.
   assert.equal((await pool.query('SELECT count(*)::int n FROM capacity_group')).rows[0].n,0);
   // Test fixtures use the admin API; production migrations create no groups.
@@ -468,6 +469,8 @@ test('database guards reject allocation bypasses and migration preserves explici
   assert.equal((await pool.query('SELECT count(*)::int n FROM customer_order WHERE id=$1',[id])).rows[0].n,0);
   const before=await settings(),group=(await pool.query('SELECT * FROM capacity_group WHERE id=$1',[belly])).rows[0];
   await pool.query(await readFile(new URL('../../../migrations/order-capacity-booking.sql',import.meta.url),'utf8'));
+  await pool.query(await readFile(new URL('../../../migrations/order-edits.sql',import.meta.url),'utf8'));
+  await pool.query(await readFile(new URL('../../../migrations/order-edits.sql',import.meta.url),'utf8'));
   assert.deepEqual(await settings(),before);assert.deepEqual((await pool.query('SELECT * FROM capacity_group WHERE id=$1',[belly])).rows[0],group);
 });
 
@@ -579,4 +582,180 @@ test('competing corrections serialize through the loaded parent revision',async(
   assert.match(results.find(r=>r.status==='rejected').reason.message,/ORDER_CONFLICT/);
   assert.equal((await savedOrder(id)).revision,2);
   assert.ok([40,50].includes((await savedPayment(receipt.requestId)).amount_cents));
+});
+
+async function currentInput() {
+  const v=input();v.expectedSettingsRevision=(await settings()).revision;
+  v.expectedGroups[0].expectedRevision=(await pool.query('SELECT revision FROM capacity_group WHERE id=$1',[lechon])).rows[0].revision;
+  v.items[0].expectedRevision=(await pool.query('SELECT revision FROM product WHERE id=$1',[product])).rows[0].revision;
+  return v;
+}
+async function editInput(id, patch={}) {
+  const o=(await pool.query('SELECT * FROM customer_order WHERE id=$1',[id])).rows[0];
+  const items=(await pool.query('SELECT * FROM order_item WHERE order_id=$1 ORDER BY id',[id])).rows;
+  const a=(await pool.query('SELECT * FROM order_capacity_allocation WHERE order_id=$1 ORDER BY group_id,block_minute',[id])).rows;
+  return {action:'EDIT',requestId:randomUUID(),id,expectedRevision:o.revision,
+    items:items.map(i=>({id:i.id,productId:i.product_id,quantity:i.quantity})),clientId:o.client_id,contactPhoneNumber:o.contact_phone_number,
+    scheduledFor:o.scheduled_for.toISOString(),expectedSettingsRevision:(await settings()).revision,
+    expectedGroups:await Promise.all([...new Set(items.map(i=>i.capacity_group_id).filter(Boolean))].map(async id=>({id,expectedRevision:(await pool.query('SELECT revision FROM capacity_group WHERE id=$1',[id])).rows[0].revision}))),
+    allocations:a.map(v=>({groupId:v.group_id,blockMinute:v.block_minute,quantity:v.quantity})),notes:o.notes,...patch};
+}
+test('edit preserves snapshots, reconciles before time checks, changes Paid and rolls back stale writes',async()=>{
+  const v=await currentInput();v.scheduledFor='2030-10-01T18:00:00Z';await service.create(actor,v);
+  const actions=new OrderActionService(pool), edits=new OrderEditService(pool,()=>new Date('2029-01-01'));
+  await actions.perform(actor,action(v.id,0,'PAYMENT',100));await actions.perform(actor,action(v.id,1,'PAID'));
+  await pool.query('UPDATE product SET price_cents=250,revision=revision+1 WHERE id=$1',[product]);
+  const e=await editInput(v.id);e.items[0].quantity=2;e.allocations[0].quantity=2;
+  await edits.edit(actor,e);await edits.edit(actor,e);
+  const saved=(await pool.query('SELECT * FROM customer_order WHERE id=$1',[v.id])).rows[0];
+  assert.equal(saved.status,'CONFIRMED');assert.equal(saved.final_total_cents,200);assert.equal(saved.subtotal_cents,200);
+  assert.equal((await pool.query('SELECT unit_price_cents FROM order_item WHERE order_id=$1',[v.id])).rows[0].unit_price_cents,100);
+  await assert.rejects(edits.edit(actor,{...e,requestId:randomUUID()}),{code:'aborted'});
+  await assert.rejects(edits.edit(actor,{...e,notes:'different'}),{code:'already-exists'});
+  assert.deepEqual(await new OrderEditService(pool,()=>new Date('2040-01-01')).edit(actor,e),{id:v.id});
+  const notes=await editInput(v.id,{notes:'Past schedule unchanged'});
+  await new OrderEditService(pool,()=>new Date('2040-01-01')).edit(actor,notes);
+  const past=await editInput(v.id,{scheduledFor:'2030-10-02T18:00:00Z'});
+  await assert.rejects(new OrderEditService(pool,()=>new Date('2040-01-01')).edit(actor,past),{code:'failed-precondition'});
+  await assert.rejects(pool.query('UPDATE order_item SET quantity=3 WHERE order_id=$1',[v.id]),/ALLOCATION_AWARE_EDIT_REQUIRED/);
+  await assert.rejects(pool.query('DELETE FROM order_capacity_allocation WHERE order_id=$1',[v.id]),/ALLOCATION_AWARE_EDIT_REQUIRED/);
+  const changed=await editInput(v.id);changed.allocations[0].quantity=1;
+  await assert.rejects(edits.edit(actor,changed),{code:'invalid-argument'});
+  assert.equal((await pool.query('SELECT revision FROM customer_order WHERE id=$1',[v.id])).rows[0].revision,notes.expectedRevision+1);
+});
+test('staff cancellation splits cash refunds, records retained charge, releases capacity and retries once',async()=>{
+  const v=await currentInput();v.items[0].expectedRevision=(await pool.query('SELECT revision FROM product WHERE id=$1',[product])).rows[0].revision;
+  v.scheduledFor='2030-11-01T18:00:00Z';await service.create(actor,v);
+  const actions=new OrderActionService(pool);
+  await actions.perform(actor,action(v.id,0,'PAYMENT',100));await actions.perform(actor,action(v.id,1,'PAYMENT',200));
+  const receipts=(await pool.query('SELECT * FROM payment WHERE order_id=$1 ORDER BY received_at,id',[v.id])).rows;
+  const c={...action(v.id,2,'CANCEL'),refundAmountCents:150,reason:'Client changed date'};
+  await Promise.all([actions.perform(actor,c),actions.perform(actor,c)]);
+  const saved=(await pool.query('SELECT * FROM customer_order WHERE id=$1',[v.id])).rows[0];
+  assert.equal(saved.status,'CANCELLED');assert.equal(saved.cancellation_total_cents,150);assert.equal(saved.revision,3);
+  const refunds=(await pool.query('SELECT * FROM refund WHERE payment_id=ANY($1::uuid[])',[receipts.map(r=>r.id)])).rows;
+  assert.equal(refunds.reduce((n,r)=>n+r.amount_cents,0),150);
+  assert.equal(refunds.find(r=>r.payment_id===receipts[0].id).amount_cents,Math.min(150,receipts[0].amount_cents));
+  const audit=(await pool.query("SELECT changes FROM order_audit_event WHERE order_id=$1 AND action='ORDER_CANCELLED'",[v.id])).rows[0].changes;
+  assert.equal(audit.after.reason,c.reason);assert.equal(audit.after.refunds.length,refunds.length);
+  let offset=0,booked;do {const page=await new BookingAvailabilityService(pool).get(actor,{day:'2030-11-01',offset});booked??=page.blocks.find(b=>b.groupId===lechon&&b.blockMinute===780)?.booked;offset=page.nextOffset;}while(offset!==null);assert.equal(Number(booked),0);
+  await assert.rejects(actions.perform(actor,{...c,requestId:randomUUID(),expectedRevision:3}),{code:'failed-precondition'});
+});
+test('unpaid cancellation, excessive refund rejection and restricted edit/cancel grants',async()=>{
+  const v=await currentInput();v.items[0].expectedRevision=(await pool.query('SELECT revision FROM product WHERE id=$1',[product])).rows[0].revision;
+  v.scheduledFor='2030-12-01T18:00:00Z';await service.create(actor,v);
+  await pool.query(`CREATE ROLE edit_runtime LOGIN PASSWORD 'test-only';
+    GRANT USAGE ON SCHEMA public TO edit_runtime;
+    GRANT SELECT ON customer_order,order_item,product,client,payment,refund,order_action_request,order_capacity_allocation,booking_settings,capacity_group TO edit_runtime;
+    GRANT UPDATE(revision,status,cancelled_at,cancellation_total_cents,updated_at) ON customer_order TO edit_runtime;
+    GRANT INSERT ON refund,order_audit_event,order_action_request TO edit_runtime;
+    GRANT UPDATE(amount_cents,status) ON payment TO edit_runtime;
+    GRANT EXECUTE ON FUNCTION public.apply_native_order_edit(uuid,integer,jsonb,jsonb,jsonb),public.lock_order_creation_sources(uuid[],uuid) TO edit_runtime`);
+  const restricted=new pg.Pool({connectionString:'postgresql://edit_runtime:test-only@127.0.0.1:15432/restaurant',max:2});
+  try {
+    await assert.rejects(restricted.query('INSERT INTO native_order_edit_context VALUES(pg_backend_pid(),txid_current(),$1)',[v.id]),/permission denied/);
+    await assert.rejects(restricted.query('UPDATE order_item SET quantity=quantity WHERE order_id=$1',[v.id]),/permission denied/);
+    const e=await editInput(v.id,{notes:'Restricted runtime edit'});
+    await new OrderEditService(restricted,()=>new Date('2029-01-01')).edit(actor,e);
+    const actions=new OrderActionService(restricted),c={...action(v.id,1,'CANCEL'),refundAmountCents:1};
+    await assert.rejects(actions.perform(actor,c),{code:'invalid-argument'});
+    assert.equal((await pool.query('SELECT status FROM customer_order WHERE id=$1',[v.id])).rows[0].status,'CONFIRMED');
+    await actions.perform(actor,{...c,refundAmountCents:0});
+    assert.equal((await pool.query('SELECT cancellation_total_cents FROM customer_order WHERE id=$1',[v.id])).rows[0].cancellation_total_cents,0);
+  } finally {await restricted.end();}
+});
+
+test('edit migration removes inherited SQL Connect private context and routine grants',async()=>{
+  await pool.query(`CREATE ROLE firebasereader_restaurant_public;
+    CREATE ROLE firebasewriter_restaurant_public;
+    GRANT SELECT ON native_order_edit_context TO firebasereader_restaurant_public;
+    GRANT ALL ON native_order_edit_context TO firebasewriter_restaurant_public;
+    GRANT EXECUTE ON FUNCTION apply_native_order_edit(uuid,integer,jsonb,jsonb,jsonb)
+      TO firebasereader_restaurant_public,firebasewriter_restaurant_public`);
+  await pool.query(await readFile(new URL('../../../migrations/order-edits.sql',import.meta.url),'utf8'));
+  for(const role of ['firebasereader_restaurant_public','firebasewriter_restaurant_public']) {
+    const result=(await pool.query(`SELECT
+      has_table_privilege($1,'native_order_edit_context','SELECT,INSERT,UPDATE,DELETE,TRUNCATE,REFERENCES,TRIGGER') context,
+      has_function_privilege($1,'apply_native_order_edit(uuid,integer,jsonb,jsonb,jsonb)','EXECUTE') edit`,[role])).rows[0];
+    assert.deepEqual(result,{context:false,edit:false});
+  }
+  // Repeatable maintenance must retain the separately granted Orders access.
+  assert.equal((await pool.query("SELECT has_function_privilege('edit_runtime','apply_native_order_edit(uuid,integer,jsonb,jsonb,jsonb)','EXECUTE') allowed")).rows[0].allowed,true);
+});
+
+async function isolatedEditOrder(day='2031-01-01',quantity=1,limit=3) {
+  const group=randomUUID(),p=randomUUID();
+  await configuration.change(admin,{action:'CREATE_GROUP',id:group,code:'EDIT_'+group.replaceAll('-','').slice(0,8).toUpperCase(),name:'Edit fixture',capacityPerBlock:limit});
+  await pool.query("INSERT INTO product(id,name,price_cents,is_active,capacity_group_id,revision,created_at) VALUES($1,'Edit item',100,true,$2,0,now())",[p,group]);
+  const v={id:randomUUID(),items:[{id:randomUUID(),productId:p,expectedRevision:0,quantity}],clientId:null,contactPhoneNumber:null,
+    scheduledFor:day+'T18:00:00Z',expectedSettingsRevision:(await settings()).revision,expectedGroups:[{id:group,expectedRevision:0}],
+    allocations:[{groupId:group,blockMinute:780,quantity}],depositRequiredCents:0,notes:null};
+  await new OrderCreationService(pool,()=>new Date('2019-01-01')).create(actor,v);
+  return {v,group,p};
+}
+test('edits keep hidden/archived snapshots and allow decreases above a lowered historical limit',async()=>{
+  const {v,group,p}=await isolatedEditOrder('2020-01-01',2);
+  await pool.query('UPDATE product SET is_active=false,capacity_group_id=null,revision=revision+1 WHERE id=$1',[p]);
+  await updateGroup(group,{capacityPerBlock:1,archived:true});
+  const e=await editInput(v.id,{notes:'Keep historical booking'});
+  const edits=new OrderEditService(pool,()=>new Date('2019-01-01'));
+  await edits.edit(actor,e);
+  const reduce=await editInput(v.id);reduce.items[0].quantity=1;reduce.allocations[0].quantity=1;
+  await edits.edit(actor,reduce);
+  const saved=(await pool.query('SELECT * FROM order_item WHERE order_id=$1',[v.id])).rows[0];
+  assert.equal(saved.capacity_group_id,group);assert.equal(saved.product_name,'Edit item');assert.equal(saved.unit_price_cents,100);
+  const increase=await editInput(v.id);increase.items[0].quantity=2;increase.allocations[0].quantity=2;
+  await assert.rejects(edits.edit(actor,increase),{code:'resource-exhausted'});
+});
+test('competing edits reserve capacity once and added products use current snapshots',async()=>{
+  const a=await isolatedEditOrder('2031-02-01',1,3);
+  const b={...a.v,id:randomUUID(),items:[{...a.v.items[0],id:randomUUID()}]};
+  await service.create(actor,b);
+  const edits=new OrderEditService(pool,()=>new Date('2029-01-01'));
+  const x=await editInput(a.v.id),y=await editInput(b.id);
+  for(const e of [x,y]) {e.items[0].quantity=2;e.allocations[0].quantity=2;}
+  const results=await Promise.allSettled([edits.edit(actor,x),edits.edit(actor,y)]);
+  assert.equal(results.filter(r=>r.status==='fulfilled').length,1);
+  assert.equal(results.find(r=>r.status==='rejected').reason.code,'resource-exhausted');
+  const extra=randomUUID();await pool.query("INSERT INTO product(id,name,price_cents,is_active,revision,created_at) VALUES($1,'Fresh price',325,true,2,now())",[extra]);
+  const edit=await editInput(a.v.id);edit.items.push({id:randomUUID(),productId:extra,quantity:1,expectedRevision:1});
+  await assert.rejects(edits.edit(actor,edit),{code:'failed-precondition'});
+  edit.items[1].expectedRevision=2;await edits.edit(actor,edit);
+  assert.equal((await pool.query('SELECT unit_price_cents FROM order_item WHERE order_id=$1 AND product_id=$2',[a.v.id,extra])).rows[0].unit_price_cents,325);
+});
+test('cancel accounts for prior refunds, rejects negative net and rolls back all effects on persistence failure',async()=>{
+  const {v}=await isolatedEditOrder('2031-03-01');const actions=new OrderActionService(pool);
+  const receipt=action(v.id,0,'PAYMENT',200);await actions.perform(actor,receipt);
+  await pool.query("INSERT INTO refund(id,payment_id,amount_cents,status,created_at) VALUES($1,$2,50,'SUCCEEDED',now())",[randomUUID(),receipt.requestId]);
+  const c={...action(v.id,1,'CANCEL'),refundAmountCents:150};
+  await pool.query(`CREATE FUNCTION fail_cancel_test() RETURNS trigger LANGUAGE plpgsql AS $$ BEGIN RAISE EXCEPTION 'cancel rollback'; END $$;
+    CREATE TRIGGER fail_cancel_test BEFORE INSERT ON order_action_request FOR EACH ROW EXECUTE FUNCTION fail_cancel_test()`);
+  try {await assert.rejects(actions.perform(actor,c),/cancel rollback/);}
+  finally {await pool.query('DROP TRIGGER fail_cancel_test ON order_action_request; DROP FUNCTION fail_cancel_test()');}
+  assert.equal((await savedOrder(v.id)).status,'CONFIRMED');assert.equal((await savedOrder(v.id)).revision,1);
+  assert.equal((await pool.query('SELECT count(*)::int n FROM refund WHERE payment_id=$1',[receipt.requestId])).rows[0].n,1);
+  await actions.perform(actor,c);assert.equal((await savedOrder(v.id)).cancellation_total_cents,0);
+  const negative=await isolatedEditOrder('2031-03-02');const r=action(negative.v.id,0,'PAYMENT',100);
+  await actions.perform(actor,r);
+  await pool.query("INSERT INTO refund(id,payment_id,amount_cents,status,created_at) VALUES($1,$2,100,'SUCCEEDED',now())",[randomUUID(),r.requestId]);
+  await actions.perform(actor,paymentEdit(negative.v.id,1,r.requestId,50));
+  await assert.rejects(actions.perform(actor,{...action(negative.v.id,2,'CANCEL'),refundAmountCents:0}),{code:'invalid-argument'});
+  assert.equal((await savedOrder(negative.v.id)).status,'CONFIRMED');
+});
+test('edit links current client phone, keeps saved group names, and can unlink without touching contacts',async()=>{
+  const {v,group,p}=await isolatedEditOrder('2031-04-01');
+  const client=randomUUID(),phone='+63'+String(BigInt('0x'+randomUUID().replaceAll('-','').slice(0,9)));
+  await pool.query("INSERT INTO client(id,phone_number,name,revision,created_at) VALUES($1,$2,'Edit client',0,now())",[client,phone]);
+  const extra=randomUUID();await pool.query("INSERT INTO product(id,name,price_cents,is_active,capacity_group_id,revision,created_at) VALUES($1,'New group product',200,true,$2,0,now())",[extra,group]);
+  await updateGroup(group,{name:'Renamed group'});
+  const edits=new OrderEditService(pool,()=>new Date('2029-01-01'));
+  const e=await editInput(v.id,{clientId:client,contactPhoneNumber:phone});
+  e.items.push({id:randomUUID(),productId:extra,expectedRevision:0,quantity:1});e.allocations[0].quantity=2;
+  await edits.edit(actor,e);
+  const lines=(await pool.query('SELECT * FROM order_item WHERE order_id=$1',[v.id])).rows;
+  assert.equal(lines.find(i=>i.product_id===p).capacity_group_name_snapshot,'Edit fixture');
+  assert.equal(lines.find(i=>i.product_id===extra).capacity_group_name_snapshot,'Edit fixture');
+  const unlink=await editInput(v.id,{clientId:null,contactPhoneNumber:null});await edits.edit(actor,unlink);
+  assert.equal((await savedOrder(v.id)).client_id,null);assert.equal((await savedOrder(v.id)).contact_phone_number,null);
+  assert.equal((await pool.query('SELECT phone_number FROM client WHERE id=$1',[client])).rows[0].phone_number,phone);
 });

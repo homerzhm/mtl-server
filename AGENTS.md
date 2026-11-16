@@ -236,3 +236,29 @@ This directory maintains Firebase SQL Connect (`restaurant`), backed by Cloud SQ
 - Apply migrations/payment-edits.sql after order-actions.sql and grant only payment
   UPDATE(amount_cents,status) in addition to existing action grants. Deploy the
   compatible callable before the iOS release; no deployment is implied by edits.
+
+## Native order edits and cancellation
+
+- `updateStaffOrder` EDIT replaces active-order items/client/pickup/allocations/notes
+  atomically. Keep saved IDs/prices/group snapshots; new lines require current
+  active catalog revisions. Preserve payments/discount/deposit fields. Reviewed
+  subtotal less discount updates an existing final total; Paid owing becomes Confirmed.
+- Unchanged schedules may be past. Changed schedules must be future. Exclude own
+  occupancy; unchanged/decreased places can retain lower historical limits and
+  archived group snapshots, but new/increased archived placements are rejected.
+- CANCEL is Confirmed/Paid-only for Google Staff OR Admin. Explicit refund means
+  cash already physically returned. Derive retained cancellation charge from net
+  paid; split successful cash refunds oldest receipt then ID, subtracting previous
+  successful refunds. Zero net cancels at zero; negative net requires correction.
+  Reason is optional, trimmed, max 1,000 UTF-16 code units. Preserve original totals,
+  items and allocation history; status releases occupancy. No provider transfer.
+- Standalone refunds remain admin-only. Cancel/refunds/revision/audit/request commit
+  together. Existing action hashes remain unchanged and matching retries reconcile
+  before current-time/revision checks. Use capacity lock before parent/receipt locks.
+- NativeOrderEditContext is an additive private @table with no connector operation.
+  Review/deploy that schema through compatible maintenance before native SQL.
+- Apply order-edits.sql after payment-edits.sql and last after older booking
+  migrations; grant only documented routine/cancellation/refund access. Never grant
+  context-table writes or connector EXECUTE on apply_native_order_edit. Preserve
+  these guards/private table in future schema maintenance. Deploy compatible
+  updateStaffOrder before the app; no deployment/live financial writes implied.

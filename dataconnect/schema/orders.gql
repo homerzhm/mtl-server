@@ -118,3 +118,11 @@ type PaymentRefundSummary @view(sql: """
   paymentId: UUID
   refundedCents: Int64
 }
+
+# Private, transaction-local capability for the restricted native edit routine.
+# No connector operations expose this table; native SQL owns its access controls.
+type NativeOrderEditContext @table(key: ["backendPid", "transactionId", "orderId"]) {
+  backendPid: Int!
+  transactionId: Int64!
+  orderId: UUID!
+}
