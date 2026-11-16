@@ -53,7 +53,13 @@ export async function verifyCloud(t,parameters,component='all',get=googleGet) {
       if(Object.keys(env).some(k=>k.includes('EMULATOR')||k.endsWith('LOCAL_DATABASE_URL'))) throw new Error(`Emulator settings deployed: ${name}`);
     }
     const job=await get(`https://cloudscheduler.googleapis.com/v1/${functionsBase}/jobs/firebase-schedule-reconcileStaffRoles-${t.functionsRegion}`);
-    if(job.state!=='ENABLED'||!['* * * * *','every 1 minutes'].includes(job.schedule)||job.httpTarget?.uri?.replace(/\/$/,'')!==ours.find(f=>f.name.endsWith('/reconcileStaffRoles'))?.serviceConfig?.uri?.replace(/\/$/,'')) throw new Error('Staff reconciliation scheduler differs');
+    const normalize=url=>url?.replace(/\/$/,'');
+    const allowedTargets=[ours.find(f=>f.name.endsWith('/reconcileStaffRoles'))?.serviceConfig?.uri,
+      `https://${t.functionsRegion}-${t.project}.cloudfunctions.net/reconcileStaffRoles`].map(normalize);
+    if(job.state!=='ENABLED'||!['* * * * *','every 1 minutes'].includes(job.schedule)||
+      !allowedTargets.includes(normalize(job.httpTarget?.uri))||job.httpTarget?.httpMethod!=='POST'||
+      job.httpTarget?.oidcToken?.serviceAccountEmail!==parameters.STAFF_RUNTIME_SERVICE_ACCOUNT||
+      (job.httpTarget.oidcToken.audience&&normalize(job.httpTarget.oidcToken.audience)!==normalize(job.httpTarget.uri))) throw new Error('Staff reconciliation scheduler differs');
     result.functions=ours.sort((a,b)=>a.name.localeCompare(b.name)).map(f=>({name:f.name,updateTime:f.updateTime,buildConfig:f.buildConfig,serviceConfig:f.serviceConfig}));
     result.scheduler={name:job.name,state:job.state,schedule:job.schedule,timeZone:job.timeZone,httpTarget:job.httpTarget,retryConfig:job.retryConfig};
   }

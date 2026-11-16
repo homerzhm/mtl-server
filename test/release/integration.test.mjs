@@ -45,6 +45,15 @@ test('native protection tampering and inherited private grants are detected',asy
     await assert.rejects(verifyPermissions(client,parameters),/Private order edit/);
   });
 });
+test('cloud UUID defaults require the genuine uuid-ossp generator',async()=>{
+  await rollback(async()=>{
+    await client.query('CREATE EXTENSION IF NOT EXISTS "uuid-ossp"');
+    await client.query('ALTER TABLE product ALTER COLUMN id SET DEFAULT uuid_generate_v4()');
+    await verifyContract(client,manifest);
+    await client.query("CREATE OR REPLACE FUNCTION public.uuid_generate_v4() RETURNS uuid LANGUAGE sql AS $$ SELECT '00000000-0000-4000-8000-000000000000'::uuid $$");
+    await assert.rejects(verifyContract(client,manifest),/genuine uuid-ossp/);
+  });
+});
 test('capacity reference repair restores SET NULL to RESTRICT without altering rows or audit triggers',async()=>{
   const before=(await client.query("SELECT tgname,tgenabled FROM pg_trigger WHERE tgrelid='order_audit_event'::regclass ORDER BY tgname")).rows;
   await client.query('ALTER TABLE order_item DROP CONSTRAINT order_item_capacity_group_id_fkey; ALTER TABLE order_item ADD CONSTRAINT order_item_capacity_group_id_fkey FOREIGN KEY(capacity_group_id) REFERENCES capacity_group(id) ON DELETE SET NULL');

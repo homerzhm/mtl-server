@@ -153,7 +153,8 @@ columns/defaults/nullability, indexes, constraints, triggers (including enabled
 state), and non-extension routines (including security-definer/search-path
 settings). The capacity CHECK has one reviewed alternative spelling for PostgreSQL’s
 flattened AND parentheses; all predicates and validation state must still match.
-Foreign-key delete actions never use formatting alternatives. Additional live objects are reported by audit rather than dropped.
+Foreign-key delete actions never use formatting alternatives. Generated UUID defaults must resolve to the genuine uuid-ossp extension function;
+a replacement function with the same name is rejected. Additional live objects are reported by audit rather than dropped.
 A PostgreSQL-version-dependent definition mismatch requires human investigation;
 never weaken the checks automatically to make a deployment pass.
 

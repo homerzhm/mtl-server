@@ -164,6 +164,11 @@ export async function verifyContract(client,manifest) {
       if(!actual[section].some(value=>candidates.some(candidate=>stableJson(value)===stableJson(candidate)))) throw new Error(`Database contract mismatch: ${section} ${row.table_name??''}.${row.name??row.column_name??''}`);
     }
   }
+  if(actual.columns.some(row=>row.column_default==='uuid_generate_v4()')) {
+    const generator=await client.query(`SELECT EXISTS(SELECT 1 FROM pg_proc p JOIN pg_namespace n ON n.oid=p.pronamespace JOIN pg_depend d ON d.objid=p.oid AND d.classid='pg_proc'::regclass AND d.deptype='e' JOIN pg_extension e ON e.oid=d.refobjid
+      WHERE n.nspname='public' AND p.proname='uuid_generate_v4' AND p.pronargs=0 AND e.extname='uuid-ossp' AND p.prosrc='uuid_generate_v4' AND p.probin='$libdir/uuid-ossp') ok`);
+    if(!generator.rows[0]?.ok) throw new Error('UUID default must use the genuine uuid-ossp v4 generator');
+  }
   if(Object.keys(expected).length!==5 || !expected.routines?.length || !expected.triggers?.length) throw new Error('Incomplete database contract');
   return digest(JSON.stringify(actual));
 }

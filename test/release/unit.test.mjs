@@ -103,17 +103,21 @@ test('full cloud verification checks identities, scheduler and backups without f
       serviceConfig:{uri:`https://${name.toLowerCase()}-example.run.app`,serviceAccountEmail:p[`${topic}_RUNTIME_SERVICE_ACCOUNT`],maxInstanceCount:1,maxInstanceRequestConcurrency:2,timeoutSeconds:staff?120:60,
         environmentVariables:Object.fromEntries(['SQL_INSTANCE','SQL_USER','SQL_DATABASE'].map(suffix=>[`${topic}_${suffix}`,p[`${topic}_${suffix}`]]))}};
   });
-  let attempts=0;
+  let attempts=0,schedulerTarget='https://reconcilestaffroles-example.run.app/';
   const instance={connectionName:t.connection,region:t.region,state:'RUNNABLE',databaseVersion:'POSTGRES_18',settings:{databaseFlags:[{name:'cloudsql.iam_authentication',value:'on'}],backupConfiguration:{enabled:true,pointInTimeRecoveryEnabled:true}}};
   const get=async url=>{
     if(url.endsWith('/schemas/main')){assert.ok(url.includes('/locations/northamerica-northeast2/'));return schema;}
     if(url.endsWith('/connectors/staff-admin'))return connector;
     if(url.endsWith('/functions')){assert.ok(url.includes('/locations/northamerica-northeast1/'));return {functions:functionResources};}
-    if(url.includes('cloudscheduler'))return {name:'scheduler',state:'ENABLED',schedule:'every 1 minutes',lastAttemptTime:`run-${++attempts}`,httpTarget:{uri:'https://reconcilestaffroles-example.run.app/'}};
+    if(url.includes('cloudscheduler'))return {name:'scheduler',state:'ENABLED',schedule:'every 1 minutes',lastAttemptTime:`run-${++attempts}`,httpTarget:{uri:schedulerTarget,httpMethod:'POST',oidcToken:{serviceAccountEmail:p.STAFF_RUNTIME_SERVICE_ACCOUNT}}};
     if(url.includes('sqladmin'))return instance;
     assert.fail(url);
   };
   const first=await verifyCloud(t,p,'all',get);assert.equal(await verifyCloud(t,p,'all',get),first);
+  schedulerTarget=`https://${t.functionsRegion}-${t.project}.cloudfunctions.net/reconcileStaffRoles`;
+  await verifyCloud(t,p,'all',get);
+  schedulerTarget='https://attacker.example/reconcileStaffRoles';await assert.rejects(verifyCloud(t,p,'all',get),/scheduler differs/);
+  schedulerTarget=`https://${t.functionsRegion}-${t.project}.cloudfunctions.net/reconcileStaffRoles`;
   instance.settings.backupConfiguration.pointInTimeRecoveryEnabled=false;
   await assert.rejects(verifyCloud(t,p,'all',get),/backups/);instance.settings.backupConfiguration.pointInTimeRecoveryEnabled=true;
   functionResources[0].serviceConfig.serviceAccountEmail='wrong@another-project.iam.gserviceaccount.com';
