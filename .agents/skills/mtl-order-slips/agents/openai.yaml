@@ -1,0 +1,4 @@
+interface:
+  display_name: "MTL Order Slips"
+  short_description: "Review slip batches beside images before creating orders"
+  default_prompt: "Use $mtl-order-slips to process this batch in Dev, show each image beside its extracted data and confidence, and ask for one final batch approval before creating anything."
