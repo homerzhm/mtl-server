@@ -19,3 +19,9 @@ query ListOrderCapacityAllocations($id: UUID!, $offset: Int! = 0) @auth(expr: "a
 query ListOrderCapacitySummaries($id: UUID!, $offset: Int! = 0) @auth(expr: "auth.uid != '' && auth.token.firebase.sign_in_provider == 'google.com' && ((has(auth.token.staff) && auth.token.staff == true) || (has(auth.token.admin) && auth.token.admin == true))") {
   orderCapacitySummaries(where: {orderId: {eq: $id}}, limit: 100, offset: $offset, orderBy: [{groupId: ASC}]) {orderId groupId groupName quantity}
 }
+
+query ListSpecialDayRules($offset: Int! = 0) @auth(expr: "auth.uid != '' && auth.token.firebase.sign_in_provider == 'google.com' && has(auth.token.staff) && auth.token.staff == true && has(auth.token.admin) && auth.token.admin == true") {
+  specialDayRules(limit: 100, offset: $offset, orderBy: [{id: ASC}]) {
+    id groupId capacityPerBlock dayKeys revision savedRevision updatedAt
+  }
+}

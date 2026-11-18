@@ -45,7 +45,7 @@ export class OrderEditService {
       if(!order||order.revision!==input.expectedRevision) throw new HttpsError('aborted','ORDER_CONFLICT');
       if(!['CONFIRMED','PAID'].includes(order.status)) throw new HttpsError('failed-precondition','ORDER_LOCKED');
       const saved=(await db.query('SELECT * FROM order_item WHERE order_id=$1 ORDER BY created_at,id',[input.id])).rows;
-      const own=(await db.query('SELECT * FROM order_capacity_allocation WHERE order_id=$1 ORDER BY group_id,block_minute',[input.id])).rows;
+      const own=(await db.query('SELECT *,pickup_day::text AS pickup_day_key FROM order_capacity_allocation WHERE order_id=$1 ORDER BY group_id,block_minute',[input.id])).rows;
       await db.query('SELECT public.lock_order_creation_sources($1::uuid[],$2::uuid)',[input.items.map(i=>i.productId),input.clientId]);
       // Client changes always take their phone from the locked directory row. An unchanged
       // client may retain its original snapshot when that profile is no longer available.
@@ -73,7 +73,8 @@ export class OrderEditService {
       for(const line of lines) if(line.capacity_group_id) required.set(line.capacity_group_id,(required.get(line.capacity_group_id)??0)+line.quantity);
       const settings=(await db.query("SELECT * FROM booking_settings WHERE id='default'")).rows[0];
       if(!settings||settings.revision!==input.expectedSettingsRevision) throw new HttpsError('failed-precondition','BOOKING_CONFIGURATION_CHANGED');
-      const groups=(await db.query('SELECT * FROM capacity_group WHERE id=ANY($1::uuid[])',[Array.from(required.keys())])).rows;
+      const pickup=localParts(new Date(input.scheduledFor));
+      const groups=(await db.query('SELECT *,public.effective_block_capacity(id,$2,capacity_per_block) AS effective_capacity FROM capacity_group WHERE id=ANY($1::uuid[])',[Array.from(required.keys()),pickup.day])).rows;
       if(input.expectedGroups.length!==required.size||input.expectedGroups.some(g=>!required.has(g.id))) throw new HttpsError('invalid-argument','ORDER_EDIT_INVALID');
       for(const [id,quantity] of required) {
         const group=groups.find(g=>g.id===id);
@@ -87,7 +88,6 @@ export class OrderEditService {
         if(group?.archived) throw new HttpsError('failed-precondition','CATALOG_CHANGED');
         line.capacity_group_name_snapshot=saved.find(s=>s.capacity_group_id===line.capacity_group_id)?.capacity_group_name_snapshot ?? group?.name;
       }
-      const pickup=localParts(new Date(input.scheduledFor));
       const sameSchedule=order.scheduled_for?.getTime()===Date.parse(input.scheduledFor)&&own.length===input.allocations.length&&
         input.allocations.every(a=>own.some(o=>o.group_id===a.groupId&&o.block_minute===a.blockMinute&&o.quantity===a.quantity));
       const timingInput={...input,items:input.items.map(i=>({...i,expectedRevision:i.expectedRevision??0}))};
@@ -98,12 +98,11 @@ export class OrderEditService {
         FROM order_capacity_allocation a JOIN customer_order o ON o.id=a.order_id
         WHERE a.pickup_day=$1 AND o.status<>'CANCELLED' AND o.id<>$2 GROUP BY a.group_id,a.block_minute`,[pickup.day,input.id])).rows;
       for(const a of input.allocations) {
-        const old=own.find(o=>o.pickup_day.toISOString?.().slice(0,10)===pickup.day&&o.group_id===a.groupId&&o.block_minute===a.blockMinute)
-          ?? own.find(o=>String(o.pickup_day).slice(0,10)===pickup.day&&o.group_id===a.groupId&&o.block_minute===a.blockMinute);
+        const old=own.find(o=>o.pickup_day_key===pickup.day&&o.group_id===a.groupId&&o.block_minute===a.blockMinute);
         const increases=a.quantity>(old?.quantity??0);
         const group=groups.find(g=>g.id===a.groupId)!;
         const used=booked.find(b=>b.group_id===a.groupId&&b.block_minute===a.blockMinute)?.quantity??'0';
-        if(increases&&(group.archived||BigInt(used)+BigInt(a.quantity)>BigInt(group.capacity_per_block)))
+        if(increases&&(group.archived||BigInt(used)+BigInt(a.quantity)>BigInt(group.effective_capacity)))
           throw new HttpsError('resource-exhausted','GROUP_CAPACITY');
       }
       const net=(await db.query(`SELECT COALESCE((SELECT sum(amount_cents) FROM payment WHERE order_id=$1 AND status='SUCCEEDED'),0)

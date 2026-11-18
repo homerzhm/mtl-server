@@ -86,3 +86,16 @@ type OrderActionRequest @table {
   actorUid: String!
   payloadHash: String!
 }
+
+# Writes are owned by manageBookingConfiguration. dayKeys are sorted MMDD integers.
+type SpecialDayRule @table @index(fields: ["groupId", "savedRevision"]) {
+  id: UUID!
+  group: CapacityGroup!
+  groupId: UUID!
+  capacityPerBlock: Int!
+  dayKeys: [Int!]!
+  revision: Int!
+  savedRevision: Int! @unique
+  updatedAt: Timestamp!
+  updatedBy: String!
+}

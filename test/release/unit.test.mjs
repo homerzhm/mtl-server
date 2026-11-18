@@ -48,7 +48,7 @@ test('production commit validation rejects tracked and untracked changes',async(
 });
 test('transactional native SQL is folded into one atomic ledger transaction',async()=>{
   const m=await json(join(root,'release/manifest.json'));
-  for(const item of m.migrations) assert.ok(transactionBody(await readFile(join(root,item.file),'utf8')).length);
+  for(const item of m.migrations.filter(migration=>migration.mode==="transaction")) assert.ok(transactionBody(await readFile(join(root,item.file),'utf8')).length);
   assert.throws(()=>transactionBody('CREATE TABLE x(id int);'));
   assert.throws(()=>transactionBody('BEGIN; SELECT 1; COMMIT; BEGIN; COMMIT;'));
 });

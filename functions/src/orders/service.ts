@@ -43,7 +43,7 @@ export class OrderCreationService {
         const client=await db.query('SELECT id FROM client WHERE id=$1',[input.clientId]);
         if(!client.rowCount) throw new HttpsError('failed-precondition','CLIENT_UNAVAILABLE');
       }
-      const groups=(await db.query('SELECT id,name,capacity_per_block,archived,revision FROM capacity_group WHERE id=ANY($1::uuid[])',[Array.from(required.keys())])).rows;
+      const groups=(await db.query('SELECT id,name,archived,revision,public.effective_block_capacity(id,$2,capacity_per_block) AS effective_capacity FROM capacity_group WHERE id=ANY($1::uuid[])',[Array.from(required.keys()),pickup.day])).rows;
       if(input.expectedGroups.length!==required.size||input.expectedGroups.some(g=>!required.has(g.id)))
         throw new HttpsError('invalid-argument','Check expected groups');
       for(const [id,quantity] of required) {
@@ -58,7 +58,7 @@ export class OrderCreationService {
       const booked=await db.query("SELECT a.group_id,a.block_minute,sum(a.quantity)::bigint AS quantity FROM order_capacity_allocation a JOIN customer_order o ON o.id=a.order_id WHERE a.pickup_day=$1 AND o.status<>'CANCELLED' GROUP BY a.group_id,a.block_minute",[pickup.day]);
       for(const a of input.allocations) {
         const used=booked.rows.find(b=>b.group_id===a.groupId&&b.block_minute===a.blockMinute)?.quantity??'0';
-        if(BigInt(used)+BigInt(a.quantity)>BigInt(groups.find(g=>g.id===a.groupId)!.capacity_per_block))
+        if(BigInt(used)+BigInt(a.quantity)>BigInt(groups.find(g=>g.id===a.groupId)!.effective_capacity))
           throw new HttpsError('resource-exhausted','GROUP_CAPACITY');
       }
       let inserted=false;

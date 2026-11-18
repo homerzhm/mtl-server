@@ -8,9 +8,10 @@ export const policies = {
     execute:[],
   },
   ORDERS: {
-    select:['product','client','customer_order','order_item','order_capacity_allocation','order_creation_request','order_action_request','payment','refund','booking_settings','capacity_group'],
-    insert:['customer_order','order_item','order_capacity_allocation','order_creation_request','order_action_request','payment','refund','order_audit_event','capacity_group'],
-    update:{customer_order:['revision','status','final_total_cents','completed_at','updated_at','cancelled_at','cancellation_total_cents'],payment:['amount_cents','status'],booking_settings:['block_minutes','revision','updated_at','updated_by'],capacity_group:['name','capacity_per_block','archived','revision','updated_at','updated_by']},
+    select:['product','client','customer_order','order_item','order_capacity_allocation','order_creation_request','order_action_request','payment','refund','booking_settings','capacity_group','special_day_rule'],
+    insert:['customer_order','order_item','order_capacity_allocation','order_creation_request','order_action_request','payment','refund','order_audit_event','capacity_group','special_day_rule'],
+    delete:['special_day_rule'],
+    update:{special_day_rule:['capacity_per_block','day_keys','revision','saved_revision','updated_at','updated_by'],customer_order:['revision','status','final_total_cents','completed_at','updated_at','cancelled_at','cancellation_total_cents'],payment:['amount_cents','status'],booking_settings:['block_minutes','revision','updated_at','updated_by'],capacity_group:['name','capacity_per_block','archived','revision','updated_at','updated_by']},
     execute:['lock_order_creation_sources(uuid[],uuid)','apply_native_order_edit(uuid,integer,jsonb,jsonb,jsonb)'],
   },
 };
@@ -26,7 +27,7 @@ export async function verifyPermissions(client,parameters) {
       const tableName=`public.${table}`;
       for(const privilege of ['SELECT','INSERT','DELETE','TRUNCATE','REFERENCES','TRIGGER']) {
         const actual=(await client.query('SELECT has_table_privilege($1,$2,$3) ok',[user,tableName,privilege])).rows[0].ok;
-        const wanted=(privilege==='SELECT'?policy.select:privilege==='INSERT'?policy.insert:[]).includes(table);
+        const wanted=(privilege==='SELECT'?policy.select:privilege==='INSERT'?policy.insert:privilege==='DELETE'?(policy.delete??[]):[]).includes(table);
         if(actual!==wanted) throw new Error(`${topic} unexpected ${privilege} privilege on ${table}`);
       }
       const columns=(await client.query("SELECT column_name FROM information_schema.columns WHERE table_schema='public' AND table_name=$1",[table])).rows;

@@ -152,7 +152,7 @@ export async function main(args=process.argv.slice(2)) {
       if(!m.components.includes('schema')) await verifyCloud(t,parameters,'schema');
       await startRelease(client,commit,m);
       try {
-        const context={target:t,config,firebase:(cmd,args)=>firebase(t,config,cmd,args)};
+        const context={target:t,config,parameters,firebase:(cmd,args)=>firebase(t,config,cmd,args)};
         if(await cleanCommit()!==commit) throw new Error('Checkout changed before migrations');
         await applyMigrations(client,m,commit,context);
         await databaseChecks(client,m,parameters);

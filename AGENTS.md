@@ -16,6 +16,31 @@ This directory maintains Firebase SQL Connect (`restaurant`), backed by Cloud SQ
   commit for local merges. Do not preserve the branch's individual commits or
   create an additional merge commit on `main`.
 
+## End-to-end releases
+
+- Treat a request to deploy to dev or production as authorization to complete the
+  full server release for that target, including routine fixes, validation, and a
+  release commit. For a request to deploy if validation passes, fix recoverable
+  blockers within the release scope and rerun the checks before deploying.
+- Review committed changes since the last managed release and tracked and
+  untracked work in this project. Include all deployable project changes unless
+  the user specifies a narrower scope. Update the release manifest to cover every
+  affected component, SQL migration, database contract, and runtime grant. Keep
+  local-only files and credentials out of the release commit.
+- Follow [the release runbook](docs/releases.md). Run the applicable local checks,
+  review any target schema diff, and prepare a clean release commit. Apply reviewed
+  additive SQL and verify its prerequisites before registering a schema that
+  depends on those changes. Preserve the existing review requirement for destructive
+  SQL and breaking connector changes.
+- Deploy with `npm run deploy` for dev. For an explicit production request, first
+  deploy and verify the exact release in dev, complete the runbook's dev acceptance,
+  then promote the same commit with `npm run deploy -- --environment production`.
+  Reuse a current dev acceptance for that exact commit when the runbook permits it.
+- Verify all affected components and migrations on the requested target. Diagnose
+  failures and resume recoverable release stages until verification passes. Report
+  the target, commit, and verified components. If blocked, report which stages
+  applied and what remains pending.
+
 ## Product conventions
 
 - Each `Product` row represents one sellable menu item. Store its fixed selling price as integer CAD cents in `priceCents`.

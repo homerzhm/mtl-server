@@ -1,6 +1,7 @@
 import {HttpsError} from 'firebase-functions/v2/https';
 import type {Pool, PoolClient} from 'pg';
 import {integer, uuid} from './booking';
+import {changeSpecialDay, isSpecialDayAction, validateSpecialDay, type SpecialDayChange} from './special-days';
 import {requireOrderCaller, type OrderCaller} from './permissions';
 
 // Statement triggers use this same lock BEFORE taking any row locks. This small
@@ -13,7 +14,7 @@ export function requireBookingAdmin(caller: OrderCaller | undefined) {
   if(actor.token.staff!==true||actor.token.admin!==true) throw new HttpsError('permission-denied','Staff and Admin access required');
   return actor;
 }
-type ConfigurationChange =
+type ConfigurationChange = SpecialDayChange |
   {action:'UPDATE_SETTINGS'; expectedRevision:number; blockMinutes:number[]} |
   {action:'CREATE_GROUP'; id:string; code:string; name:string; capacityPerBlock:number} |
   {action:'UPDATE_GROUP'; id:string; expectedRevision:number; name:string; capacityPerBlock:number; archived:boolean};
@@ -21,6 +22,7 @@ export function validateConfiguration(raw:unknown):ConfigurationChange {
   const fail=():never=>{throw new HttpsError('invalid-argument','BOOKING_CONFIGURATION_INVALID');};
   if(!raw||typeof raw!=='object'||Array.isArray(raw)) return fail();
   const v=raw as Record<string,unknown>;
+  if(isSpecialDayAction(v.action)) return validateSpecialDay(v);
   const allowed=v.action==='UPDATE_SETTINGS'?['action','expectedRevision','blockMinutes']:
     v.action==='CREATE_GROUP'?['action','id','code','name','capacityPerBlock']:
     v.action==='UPDATE_GROUP'?['action','id','expectedRevision','name','capacityPerBlock','archived']:[];
@@ -52,6 +54,11 @@ export class BookingConfigurationService {
     const actor=requireBookingAdmin(caller),input=validateConfiguration(raw),db=await this.pool.connect();
     try {
       await db.query('BEGIN');await lockCapacity(db);
+      if(input.action==='CREATE_SPECIAL_DAY'||input.action==='UPDATE_SPECIAL_DAY'||input.action==='REMOVE_SPECIAL_DAY') {
+        const saved=await changeSpecialDay(db,actor.uid,input);
+        await db.query('COMMIT');
+        return saved;
+      }
       if(input.action==='UPDATE_SETTINGS') {
         const result=await db.query(`UPDATE booking_settings SET block_minutes=$1,revision=revision+1,updated_at=now(),updated_by=$2
           WHERE id='default' AND revision=$3 RETURNING id,block_minutes,revision,updated_at,updated_by`,[input.blockMinutes,actor.uid,input.expectedRevision]);
@@ -89,9 +96,11 @@ export class BookingAvailabilityService {
       await db.query('BEGIN ISOLATION LEVEL REPEATABLE READ READ ONLY');
       const s=(await db.query("SELECT * FROM booking_settings WHERE id='default'")).rows[0];
       if(!s) throw new HttpsError('failed-precondition','BOOKING_NOT_CONFIGURED');
-      const rows=(await db.query(`SELECT g.id,g.code,g.name,g.archived,g.revision,g.capacity_per_block,b.minute,
-          COALESCE(a.booked,0)::text AS booked,(g.capacity_per_block-COALESCE(a.booked,0))::text AS remaining
-        FROM capacity_group g CROSS JOIN unnest($2::integer[]) b(minute)
+      const rows=(await db.query(`SELECT g.id,g.code,g.name,g.archived,g.revision,c.capacity,b.minute,
+          COALESCE(a.booked,0)::text AS booked,(c.capacity-COALESCE(a.booked,0))::text AS remaining
+        FROM capacity_group g CROSS JOIN LATERAL (
+          SELECT public.effective_block_capacity(g.id,$1,g.capacity_per_block) AS capacity
+        ) c CROSS JOIN unnest($2::integer[]) b(minute)
         LEFT JOIN (SELECT a.group_id,a.block_minute,sum(a.quantity)::bigint AS booked
           FROM order_capacity_allocation a JOIN customer_order o ON o.id=a.order_id
           WHERE a.pickup_day=$1 AND o.status<>'CANCELLED' GROUP BY a.group_id,a.block_minute) a
@@ -100,7 +109,7 @@ export class BookingAvailabilityService {
       await db.query('COMMIT');
       return {day:input.day,timeZone:'America/Toronto',settings:{blockMinutes:s.block_minutes,revision:s.revision},
         blocks:rows.slice(0,100).map(r=>({groupId:r.id,groupCode:r.code,groupName:r.name,archived:r.archived,groupRevision:r.revision,
-          blockMinute:r.minute,capacity:r.capacity_per_block,booked:r.booked,remaining:r.remaining})),
+          blockMinute:r.minute,capacity:r.capacity,booked:r.booked,remaining:r.remaining})),
         nextOffset:rows.length>100?input.offset+100:null};
     } catch(error) {await db.query('ROLLBACK').catch(()=>{});throw error;} finally {db.release();}
   }

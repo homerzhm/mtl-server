@@ -7,6 +7,7 @@ import {root,loadManifest,digest} from '../../scripts/release/config.mjs';
 import {Client,withLock,verifyContract,assertPrivateLedger,assertEmpty,migrationState,applyMigrations,migrationChecksum,startRelease,releaseRow,markState,assertPromotable} from '../../scripts/release/database.mjs';
 import {verifyPermissions} from '../../scripts/release/permissions.mjs';
 import {componentStage} from '../../scripts/release/cli.mjs';
+import {up as deploySpecialDaySchema} from '../../migrations/deploy-special-day-schema.mjs';
 let client,manifest;
 before(async()=>{
   client=await fixture();manifest=await loadManifest();
@@ -22,6 +23,38 @@ test('fresh migration setup has no business seeds and only required schedule',as
   assert.deepEqual((await client.query('SELECT id,block_minutes FROM booking_settings')).rows,[{id:'default',block_minutes:[660,780,930,1080]}]);
   for(const t of ['staff_account','staff_role_change','staff_role_control']) assert.equal((await client.query(`SELECT count(*)::int n FROM ${t}`)).rows[0].n,0);
   await verifyContract(client,manifest);await verifyPermissions(client,parameters);await assertPrivateLedger(client,parameters);
+});
+test('special-day schema maintenance creates SQL before registration and resumes an interrupted release',async()=>{
+  const firebase=async (command,args)=>{
+    assert.equal(command,'deploy');
+    assert.deepEqual(args,['--only','dataconnect:restaurant:schema','--non-interactive']);
+    const result=await client.query('SELECT count(*)::int n FROM public.special_day_rule');
+    assert.equal(result.rows[0].n,0);
+    const {rows:[access]}=await client.query(`SELECT
+      has_table_privilege('firebasereader_restaurant_public','native_order_edit_context','SELECT') AS can_read,
+      has_table_privilege('firebasereader_restaurant_public','native_order_edit_context','INSERT,UPDATE,DELETE') AS can_write`);
+    assert.deepEqual(access,{can_read:true,can_write:false});
+    await assert.rejects(client.query('UPDATE client SET name=name WHERE false'),{code:'55000'});
+    const fk=(await client.query("SELECT confdeltype FROM pg_constraint WHERE conname='order_item_order_id_fkey'")).rows[0];
+    assert.equal(fk.confdeltype,'c');
+  };
+  await client.query('DROP TABLE public.special_day_rule');
+  await assert.rejects(deploySpecialDaySchema(client,{parameters,firebase:async (...args)=>{
+    await firebase(...args);
+    throw new Error('interrupted');
+  }}),/interrupted/);
+  const {rows:[restored]}=await client.query(`SELECT
+    to_regclass('mtl_operations.special_day_constraint_snapshot') IS NULL AS snapshot_cleared,
+    to_regprocedure('public.mtl_special_day_schema_pause()') IS NULL AS pause_cleared,
+    (SELECT confdeltype FROM pg_constraint WHERE conname='order_item_order_id_fkey') AS delete_policy`);
+  assert.deepEqual(restored,{snapshot_cleared:true,pause_cleared:true,delete_policy:'r'});
+  await client.query('UPDATE client SET name=name WHERE false');
+  await deploySpecialDaySchema(client,{firebase,parameters});
+  await deploySpecialDaySchema(client,{firebase,parameters});
+  await client.query(await readFile(join(root,'migrations/special-day-capacity.sql'),'utf8'));
+  await verifyContract(client,manifest);
+  await verifyPermissions(client,parameters);
+  assert.equal((await client.query(await readFile(join(root,'migrations/verify-special-day-capacity.sql'),'utf8'))).rows[0].ok,true);
 });
 test('native protection tampering and inherited private grants are detected',async()=>{
   await rollback(async()=>{
@@ -88,8 +121,8 @@ test('migration history enforces ordered prefix, exact checksums and no omitted 
   });
 });
 test('transaction migrations record atomically; failure resumes without reapplying successful DDL',async()=>{
-  const first=await migrateItem('008-probe','test/release/fixtures/007-add-probe.sql','test/release/fixtures/verify-probe.sql');
-  const fail=await migrateItem('009-fail','test/release/fixtures/008-fail.sql','test/release/fixtures/verify-probe.sql');
+  const first=await migrateItem('010-probe','test/release/fixtures/007-add-probe.sql','test/release/fixtures/verify-probe.sql');
+  const fail=await migrateItem('011-fail','test/release/fixtures/008-fail.sql','test/release/fixtures/verify-probe.sql');
   const m={...manifest,migrations:[...manifest.migrations,first,fail]};
   await assert.rejects(applyMigrations(client,m,'commit'),/division by zero/);
   assert.equal((await client.query('SELECT count(*)::int n FROM mtl_operations.probe')).rows[0].n,1);
@@ -98,8 +131,8 @@ test('transaction migrations record atomically; failure resumes without reapplyi
   assert.equal((await client.query('SELECT count(*)::int n FROM mtl_operations.probe')).rows[0].n,1);
 });
 test('nontransactional maintenance resumes after verification failure without duplicating effects',async()=>{
-  const probe=await migrateItem('008-probe','test/release/fixtures/007-add-probe.sql','test/release/fixtures/verify-probe.sql');
-  const item=await migrateItem('009-maintenance','test/release/fixtures/maintenance.mjs','test/release/fixtures/verify-maintenance.sql','maintenance');
+  const probe=await migrateItem('010-probe','test/release/fixtures/007-add-probe.sql','test/release/fixtures/verify-probe.sql');
+  const item=await migrateItem('011-maintenance','test/release/fixtures/maintenance.mjs','test/release/fixtures/verify-maintenance.sql','maintenance');
   const broken={...item,verify:'test/release/fixtures/008-fail.sql'};
   await assert.rejects(applyMigrations(client,{...manifest,migrations:[...manifest.migrations,probe,broken]},'commit'));
   assert.equal((await client.query('SELECT count(*)::int n FROM mtl_operations.maintenance_probe')).rows[0].n,1);
@@ -107,7 +140,7 @@ test('nontransactional maintenance resumes after verification failure without du
   await applyMigrations(client,{...manifest,migrations:[...manifest.migrations,probe,item]},'commit');
   assert.equal((await client.query('SELECT count(*)::int n FROM mtl_operations.maintenance_probe')).rows[0].n,1);
   // Test history is isolated from subsequent promotion assertions.
-  await client.query("DELETE FROM mtl_operations.migration WHERE id LIKE '008-%' OR id LIKE '009-%'");
+  await client.query("DELETE FROM mtl_operations.migration WHERE id LIKE '010-%' OR id LIKE '011-%'");
 });
 test('component retries skip verified completed stages, retain failure and reject drift',async()=>{
   const commit='abc123';await startRelease(client,commit,manifest);

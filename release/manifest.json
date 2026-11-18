@@ -1,9 +1,11 @@
 {
   "version": 1,
   "components": [
+    "schema",
+    "connector",
     "functions"
   ],
-  "schemaMaintenance": null,
+  "schemaMaintenance": "008-special-day-schema",
   "migrations": [
     {
       "id": "001-order-integrity",
@@ -47,6 +49,20 @@
       "verify": "migrations/verify-item-capacity-reference.sql",
       "mode": "transaction",
       "baselineOnly": true
+    },
+    {
+      "id": "008-special-day-schema",
+      "file": "migrations/deploy-special-day-schema.mjs",
+      "mode": "maintenance",
+      "idempotent": true,
+      "procedure": "docs/special-day-release.md",
+      "verify": "migrations/verify-special-day-schema.sql"
+    },
+    {
+      "id": "009-special-day-capacity",
+      "file": "migrations/special-day-capacity.sql",
+      "mode": "transaction",
+      "verify": "migrations/verify-special-day-capacity.sql"
     }
   ],
   "checks": [

@@ -13,8 +13,8 @@ const actor={uid:'order-test',token:{staff:true,firebase:{sign_in_provider:'goog
 const service=new OrderCreationService(pool,()=>new Date('2030-01-01T00:00:00Z'));
 let product;
 const encode=v=>Buffer.from(JSON.stringify(v)).toString('base64url');
-async function query(operationName,variables={}) {
-  const token=`${encode({alg:'none'})}.${encode({sub:actor.uid,aud:'demo-mtl',iss:'https://securetoken.google.com/demo-mtl',staff:true,firebase:{sign_in_provider:'google.com'},iat:Math.floor(Date.now()/1000),exp:Math.floor(Date.now()/1000)+3600})}.`;
+async function query(operationName,variables={},claims={staff:true}) {
+  const token=`${encode({alg:'none'})}.${encode({sub:actor.uid,aud:'demo-mtl',iss:'https://securetoken.google.com/demo-mtl',...claims,firebase:{sign_in_provider:'google.com'},iat:Math.floor(Date.now()/1000),exp:Math.floor(Date.now()/1000)+3600})}.`;
   const r=await fetch('http://127.0.0.1:9399/v1/projects/demo-mtl/locations/northamerica-northeast1/services/restaurant/connectors/staff-admin:executeQuery',{method:'POST',headers:{'Content-Type':'application/json','x-firebase-auth-token':token},body:JSON.stringify({operationName,variables})});
   const body=await r.json();assert.equal(r.ok&&!body.errors?.length,true,JSON.stringify(body));return body.data;
 }
@@ -25,7 +25,7 @@ before(async()=>{
   const token=`${encode({alg:'none'})}.${encode({sub:actor.uid,aud:'demo-mtl',iss:'https://securetoken.google.com/demo-mtl',staff:true,firebase:{sign_in_provider:'google.com'},iat:Math.floor(Date.now()/1000),exp:Math.floor(Date.now()/1000)+3600})}.`;
   const r=await fetch('http://127.0.0.1:9399/v1/projects/demo-mtl/locations/northamerica-northeast1/services/restaurant/connectors/staff-admin:executeQuery',{method:'POST',headers:{'Content-Type':'application/json','x-firebase-auth-token':token},body:JSON.stringify({operationName:'ListOrders',variables:{}})});
   const result=await r.json();assert.equal(!result.errors?.length,true,JSON.stringify(result));
-  for(const migration of ['order-integrity.sql','order-paid-status.sql','order-capacity-booking.sql','order-actions.sql','payment-edits.sql','order-edits.sql'])await pool.query(await readFile(new URL(`../../../migrations/${migration}`,import.meta.url),'utf8'));
+  for(const migration of ['order-integrity.sql','order-paid-status.sql','order-capacity-booking.sql','order-actions.sql','payment-edits.sql','order-edits.sql','special-day-capacity.sql'])await pool.query(await readFile(new URL(`../../../migrations/${migration}`,import.meta.url),'utf8'));
   await pool.query(await readFile(new URL('../../../migrations/order-actions.sql',import.meta.url),'utf8')); // Repeatable upgrade.
   assert.equal((await pool.query('SELECT count(*)::int n FROM capacity_group')).rows[0].n,0);
   // Test fixtures use the admin API; production migrations create no groups.
@@ -200,7 +200,7 @@ test('phone summary pagination passes 100 rows and ledger aggregates do not mult
 test('dedicated runtime creates with SELECT/INSERT and helper EXECUTE only',async()=>{
   await pool.query('CREATE ROLE orders_runtime_test NOLOGIN');
   await pool.query('GRANT USAGE ON SCHEMA public TO orders_runtime_test');
-  await pool.query('GRANT SELECT ON product,client,customer_order,order_item,order_capacity_allocation,order_creation_request,booking_settings,capacity_group TO orders_runtime_test');
+  await pool.query('GRANT SELECT ON product,client,customer_order,order_item,order_capacity_allocation,order_creation_request,booking_settings,capacity_group,special_day_rule TO orders_runtime_test');
   await pool.query('GRANT INSERT ON customer_order,order_item,order_capacity_allocation,order_creation_request,order_audit_event TO orders_runtime_test');
   await pool.query('GRANT EXECUTE ON FUNCTION public.lock_order_creation_sources(uuid[],uuid) TO orders_runtime_test');
   const restricted=new pg.Pool({connectionString:'postgresql://postgres:test-only@127.0.0.1:15432/restaurant',max:1,options:'-c role=orders_runtime_test'});
@@ -431,7 +431,7 @@ test('configuration callables authorize before dependencies and restricted grant
   assert.equal((await read.json()).result.blocks.length>0,true);
   await pool.query(`CREATE ROLE booking_runtime NOLOGIN;
     GRANT USAGE ON SCHEMA public TO booking_runtime;
-    GRANT SELECT ON booking_settings,capacity_group,product,order_capacity_allocation,customer_order TO booking_runtime;
+    GRANT SELECT ON booking_settings,capacity_group,product,order_capacity_allocation,customer_order,special_day_rule TO booking_runtime;
     GRANT INSERT ON capacity_group TO booking_runtime;
     GRANT UPDATE(block_minutes,revision,updated_at,updated_by) ON booking_settings TO booking_runtime;
     GRANT UPDATE(name,capacity_per_block,archived,revision,updated_at,updated_by) ON capacity_group TO booking_runtime`);
@@ -471,6 +471,7 @@ test('database guards reject allocation bypasses and migration preserves explici
   await pool.query(await readFile(new URL('../../../migrations/order-capacity-booking.sql',import.meta.url),'utf8'));
   await pool.query(await readFile(new URL('../../../migrations/order-edits.sql',import.meta.url),'utf8'));
   await pool.query(await readFile(new URL('../../../migrations/order-edits.sql',import.meta.url),'utf8'));
+  await pool.query(await readFile(new URL('../../../migrations/special-day-capacity.sql',import.meta.url),'utf8'));
   assert.deepEqual(await settings(),before);assert.deepEqual((await pool.query('SELECT * FROM capacity_group WHERE id=$1',[belly])).rows[0],group);
 });
 
@@ -646,7 +647,7 @@ test('unpaid cancellation, excessive refund rejection and restricted edit/cancel
   v.scheduledFor='2030-12-01T18:00:00Z';await service.create(actor,v);
   await pool.query(`CREATE ROLE edit_runtime LOGIN PASSWORD 'test-only';
     GRANT USAGE ON SCHEMA public TO edit_runtime;
-    GRANT SELECT ON customer_order,order_item,product,client,payment,refund,order_action_request,order_capacity_allocation,booking_settings,capacity_group TO edit_runtime;
+    GRANT SELECT ON customer_order,order_item,product,client,payment,refund,order_action_request,order_capacity_allocation,booking_settings,capacity_group,special_day_rule TO edit_runtime;
     GRANT UPDATE(revision,status,cancelled_at,cancellation_total_cents,updated_at) ON customer_order TO edit_runtime;
     GRANT INSERT ON refund,order_audit_event,order_action_request TO edit_runtime;
     GRANT UPDATE(amount_cents,status) ON payment TO edit_runtime;
@@ -673,6 +674,7 @@ test('edit migration removes inherited SQL Connect private context and routine g
     GRANT EXECUTE ON FUNCTION apply_native_order_edit(uuid,integer,jsonb,jsonb,jsonb)
       TO firebasereader_restaurant_public,firebasewriter_restaurant_public`);
   await pool.query(await readFile(new URL('../../../migrations/order-edits.sql',import.meta.url),'utf8'));
+  await pool.query(await readFile(new URL('../../../migrations/special-day-capacity.sql',import.meta.url),'utf8'));
   for(const role of ['firebasereader_restaurant_public','firebasewriter_restaurant_public']) {
     const result=(await pool.query(`SELECT
       has_table_privilege($1,'native_order_edit_context','SELECT,INSERT,UPDATE,DELETE,TRUNCATE,REFERENCES,TRIGGER') context,
@@ -758,4 +760,82 @@ test('edit links current client phone, keeps saved group names, and can unlink w
   const unlink=await editInput(v.id,{clientId:null,contactPhoneNumber:null});await edits.edit(actor,unlink);
   assert.equal((await savedOrder(v.id)).client_id,null);assert.equal((await savedOrder(v.id)).contact_phone_number,null);
   assert.equal((await pool.query('SELECT phone_number FROM client WHERE id=$1',[client])).rows[0].phone_number,phone);
+});
+
+async function availabilityForGroup(day,groupId) {
+  let offset=0;
+  do {
+    const page=await availabilityService.get(actor,{day,offset});
+    const block=page.blocks.find(row=>row.groupId===groupId&&row.blockMinute===780);
+    if(block) return {block,revision:page.settings.revision};
+    offset=page.nextOffset;
+  } while(offset!==null);
+  assert.fail(`Missing availability for group ${groupId}`);
+}
+
+test('annual rules use committed precedence and preserve occupancy under a zero limit',async()=>{
+  const day='2032-02-29';
+  const {v,group}=await isolatedEditOrder(day,3,4);
+  const fallback={action:'CREATE_SPECIAL_DAY',id:randomUUID(),groupId:group,capacityPerBlock:2,dayKeys:[229]};
+  await assert.rejects(configuration.change(actor,fallback),{code:'permission-denied'});
+  await assert.rejects(query('ListSpecialDayRules'),/@auth|permission/i);
+  await assert.rejects(configuration.change(admin,{...fallback,dayKeys:[230]}),{code:'invalid-argument'});
+  const first=await configuration.change(admin,fallback);
+  const closed={...fallback,id:randomUUID(),capacityPerBlock:0};
+  const newest=await configuration.change(admin,closed);
+  assert.ok(newest.rule.savedRevision>first.rule.savedRevision);
+  assert.deepEqual(await configuration.change(admin,fallback),first);
+  assert.equal((await settings()).revision,newest.rule.savedRevision);
+  const listed=await query('ListSpecialDayRules',{}, {staff:true,admin:true});
+  assert.equal(listed.specialDayRules.filter(r=>r.groupId.replaceAll('-','')===group.replaceAll('-','')).length,2);
+
+  const block=async (date=day)=>(await availabilityForGroup(date,group)).block;
+  const closedBlock=await block();
+  assert.deepEqual([closedBlock.capacity,closedBlock.booked,closedBlock.remaining],[0,'3','-3']);
+  assert.equal((await block('2031-02-28')).capacity,4);
+  assert.equal((await block('2028-02-29')).capacity,0);
+  const copy={...v,id:randomUUID(),items:[{...v.items[0],id:randomUUID()}]};
+  await assert.rejects(service.create(actor,copy),/BOOKING_CONFIGURATION_CHANGED/);
+  copy.expectedSettingsRevision=(await settings()).revision;
+  await assert.rejects(service.create(actor,copy),/GROUP_CAPACITY/);
+
+  const editor=new OrderEditService(pool,()=>new Date('2030-01-01'));
+  await editor.edit(actor,await editInput(v.id,{notes:'Keep the booking'}));
+  const reduced=await editInput(v.id);
+  reduced.items[0].quantity=2;
+  reduced.allocations[0].quantity=2;
+  await editor.edit(actor,reduced);
+  const increase=await editInput(v.id);
+  increase.items[0].quantity=3;
+  increase.allocations[0].quantity=3;
+  await assert.rejects(editor.edit(actor,increase),/GROUP_CAPACITY/);
+  const move=await editInput(v.id);
+  move.allocations[0].blockMinute=660;
+  await assert.rejects(editor.edit(actor,move),/GROUP_CAPACITY/);
+
+  await updateGroup(group,{capacityPerBlock:1}); // The annual rule covers the upcoming booking.
+  const update={action:'UPDATE_SPECIAL_DAY',id:closed.id,expectedRevision:0,capacityPerBlock:1,dayKeys:[229]};
+  await configuration.change(admin,update);
+  await assert.rejects(configuration.change(admin,update),/BOOKING_CONFIGURATION_CONFLICT/);
+  await cancel(v.id);
+  await assert.rejects(pool.query("UPDATE customer_order SET status='CONFIRMED',cancelled_at=null WHERE id=$1",[v.id]),/GROUP_CAPACITY/);
+  await assert.rejects(configuration.change(admin,{action:'REMOVE_SPECIAL_DAY',id:closed.id,expectedRevision:0}),/BOOKING_CONFIGURATION_CONFLICT/);
+  await configuration.change(admin,{action:'REMOVE_SPECIAL_DAY',id:closed.id,expectedRevision:1});
+  assert.equal((await block()).capacity,2);
+  await configuration.change(admin,{action:'REMOVE_SPECIAL_DAY',id:fallback.id,expectedRevision:0});
+  assert.equal((await block()).capacity,1);
+});
+
+test('a rule racing order creation commits atomically with its configuration revision',async()=>{
+  const day='2032-12-24';
+  const {v,group}=await isolatedEditOrder(day,1,4);
+  const next={...v,id:randomUUID(),items:[{...v.items[0],id:randomUUID()}]};
+  const rule={action:'CREATE_SPECIAL_DAY',id:randomUUID(),groupId:group,capacityPerBlock:0,dayKeys:[1224]};
+  const [change,booking]=await Promise.allSettled([configuration.change(admin,rule),service.create(actor,next)]);
+  assert.equal(change.status,'fulfilled');
+  if(booking.status==='rejected') assert.match(booking.reason.message,/BOOKING_CONFIGURATION_CHANGED/);
+  const {block,revision}=await availabilityForGroup(day,group);
+  assert.equal(revision,change.value.rule.savedRevision);
+  assert.equal(block.capacity,0);
+  assert.equal(block.booked,booking.status==='fulfilled'?'2':'1');
 });

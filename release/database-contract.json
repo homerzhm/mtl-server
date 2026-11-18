@@ -769,6 +769,70 @@
       "column_default": "'SUCCEEDED'::text"
     },
     {
+      "table_name": "special_day_rule",
+      "column_name": "id",
+      "data_type": "uuid",
+      "udt_name": "uuid",
+      "is_nullable": "NO",
+      "column_default": null
+    },
+    {
+      "table_name": "special_day_rule",
+      "column_name": "group_id",
+      "data_type": "uuid",
+      "udt_name": "uuid",
+      "is_nullable": "NO",
+      "column_default": null
+    },
+    {
+      "table_name": "special_day_rule",
+      "column_name": "capacity_per_block",
+      "data_type": "integer",
+      "udt_name": "int4",
+      "is_nullable": "NO",
+      "column_default": null
+    },
+    {
+      "table_name": "special_day_rule",
+      "column_name": "day_keys",
+      "data_type": "ARRAY",
+      "udt_name": "_int4",
+      "is_nullable": "NO",
+      "column_default": null
+    },
+    {
+      "table_name": "special_day_rule",
+      "column_name": "revision",
+      "data_type": "integer",
+      "udt_name": "int4",
+      "is_nullable": "NO",
+      "column_default": null
+    },
+    {
+      "table_name": "special_day_rule",
+      "column_name": "saved_revision",
+      "data_type": "integer",
+      "udt_name": "int4",
+      "is_nullable": "NO",
+      "column_default": null
+    },
+    {
+      "table_name": "special_day_rule",
+      "column_name": "updated_at",
+      "data_type": "timestamp with time zone",
+      "udt_name": "timestamptz",
+      "is_nullable": "NO",
+      "column_default": null
+    },
+    {
+      "table_name": "special_day_rule",
+      "column_name": "updated_by",
+      "data_type": "text",
+      "udt_name": "text",
+      "is_nullable": "NO",
+      "column_default": null
+    },
+    {
       "table_name": "staff_account",
       "column_name": "uid",
       "data_type": "text",
@@ -1744,6 +1808,83 @@
       "convalidated": true
     },
     {
+      "table_name": "special_day_rule",
+      "name": "special_day_rule_capacity_per_block_not_null",
+      "contype": "n",
+      "definition": "NOT NULL capacity_per_block",
+      "convalidated": true
+    },
+    {
+      "table_name": "special_day_rule",
+      "name": "special_day_rule_day_keys_not_null",
+      "contype": "n",
+      "definition": "NOT NULL day_keys",
+      "convalidated": true
+    },
+    {
+      "table_name": "special_day_rule",
+      "name": "special_day_rule_group_id_fkey",
+      "contype": "f",
+      "definition": "FOREIGN KEY (group_id) REFERENCES capacity_group(id) ON DELETE CASCADE",
+      "convalidated": true
+    },
+    {
+      "table_name": "special_day_rule",
+      "name": "special_day_rule_group_id_not_null",
+      "contype": "n",
+      "definition": "NOT NULL group_id",
+      "convalidated": true
+    },
+    {
+      "table_name": "special_day_rule",
+      "name": "special_day_rule_id_not_null",
+      "contype": "n",
+      "definition": "NOT NULL id",
+      "convalidated": true
+    },
+    {
+      "table_name": "special_day_rule",
+      "name": "special_day_rule_pkey",
+      "contype": "p",
+      "definition": "PRIMARY KEY (id)",
+      "convalidated": true
+    },
+    {
+      "table_name": "special_day_rule",
+      "name": "special_day_rule_revision_not_null",
+      "contype": "n",
+      "definition": "NOT NULL revision",
+      "convalidated": true
+    },
+    {
+      "table_name": "special_day_rule",
+      "name": "special_day_rule_saved_revision_not_null",
+      "contype": "n",
+      "definition": "NOT NULL saved_revision",
+      "convalidated": true
+    },
+    {
+      "table_name": "special_day_rule",
+      "name": "special_day_rule_updated_at_not_null",
+      "contype": "n",
+      "definition": "NOT NULL updated_at",
+      "convalidated": true
+    },
+    {
+      "table_name": "special_day_rule",
+      "name": "special_day_rule_updated_by_not_null",
+      "contype": "n",
+      "definition": "NOT NULL updated_by",
+      "convalidated": true
+    },
+    {
+      "table_name": "special_day_rule",
+      "name": "special_day_rule_values_valid",
+      "contype": "c",
+      "definition": "CHECK (((capacity_per_block >= 0) AND (revision >= 0) AND (saved_revision > 0) AND (valid_special_day_keys(day_keys) IS TRUE)))",
+      "convalidated": true
+    },
+    {
       "table_name": "staff_account",
       "name": "staff_account_claim_sync_status_not_null",
       "contype": "n",
@@ -2068,6 +2209,26 @@
       "definition": "CREATE UNIQUE INDEX refund_pkey ON public.refund USING btree (id)"
     },
     {
+      "table_name": "special_day_rule",
+      "name": "special_day_rule_groupId_idx",
+      "definition": "CREATE INDEX \"special_day_rule_groupId_idx\" ON public.special_day_rule USING btree (group_id)"
+    },
+    {
+      "table_name": "special_day_rule",
+      "name": "special_day_rule_groupId_savedRevision_idx",
+      "definition": "CREATE INDEX \"special_day_rule_groupId_savedRevision_idx\" ON public.special_day_rule USING btree (group_id, saved_revision)"
+    },
+    {
+      "table_name": "special_day_rule",
+      "name": "special_day_rule_pkey",
+      "definition": "CREATE UNIQUE INDEX special_day_rule_pkey ON public.special_day_rule USING btree (id)"
+    },
+    {
+      "table_name": "special_day_rule",
+      "name": "special_day_rule_savedRevision_uidx",
+      "definition": "CREATE UNIQUE INDEX \"special_day_rule_savedRevision_uidx\" ON public.special_day_rule USING btree (saved_revision)"
+    },
+    {
       "table_name": "staff_account",
       "name": "staff_account_createdAt_uid_idx",
       "definition": "CREATE INDEX \"staff_account_createdAt_uid_idx\" ON public.staff_account USING btree (created_at, uid)"
@@ -2236,6 +2397,12 @@
       "name": "product_capacity_group_guard",
       "tgenabled": "O",
       "definition": "CREATE TRIGGER product_capacity_group_guard BEFORE INSERT OR UPDATE ON public.product FOR EACH ROW EXECUTE FUNCTION guard_product_capacity_group()"
+    },
+    {
+      "table_name": "special_day_rule",
+      "name": "booking_capacity_lock",
+      "tgenabled": "O",
+      "definition": "CREATE TRIGGER booking_capacity_lock BEFORE INSERT OR DELETE OR UPDATE ON public.special_day_rule FOR EACH STATEMENT EXECUTE FUNCTION lock_booking_capacity()"
     }
   ],
   "routines": [
@@ -2258,6 +2425,15 @@
       "definition": "CREATE OR REPLACE FUNCTION public.check_order_capacity_totals()\n RETURNS trigger\n LANGUAGE plpgsql\n SET search_path TO 'pg_catalog', 'public', 'pg_temp'\nAS $function$\nDECLARE target uuid;\nBEGIN\n  IF TG_TABLE_NAME='customer_order' THEN target:=NEW.id; ELSE target:=NEW.order_id; END IF;\n  IF EXISTS(SELECT 1 FROM customer_order WHERE id=target AND booking_managed) AND EXISTS(\n    SELECT 1 FROM\n      (SELECT capacity_group_id AS group_id,sum(quantity) AS quantity FROM order_item\n        WHERE order_id=target AND capacity_group_id IS NOT NULL GROUP BY capacity_group_id) i\n      FULL JOIN (SELECT group_id,sum(quantity) AS quantity FROM order_capacity_allocation WHERE order_id=target GROUP BY group_id) a USING(group_id)\n      WHERE i.quantity IS DISTINCT FROM a.quantity\n  ) THEN RAISE EXCEPTION 'GROUP_ALLOCATION_INVALID'; END IF;\n  RETURN NULL;\nEND $function$\n"
     },
     {
+      "name": "effective_block_capacity",
+      "args": "target uuid, pickup_day date, usual_limit integer",
+      "security_definer": false,
+      "config": [
+        "search_path=pg_catalog, public"
+      ],
+      "definition": "CREATE OR REPLACE FUNCTION public.effective_block_capacity(target uuid, pickup_day date, usual_limit integer)\n RETURNS integer\n LANGUAGE sql\n STABLE\n SET search_path TO 'pg_catalog', 'public'\nAS $function$\n  SELECT COALESCE(public.special_day_capacity(target,pickup_day),usual_limit)\n$function$\n"
+    },
+    {
       "name": "guard_booking_settings",
       "args": "",
       "security_definer": false,
@@ -2273,7 +2449,7 @@
       "config": [
         "search_path=pg_catalog, public, pg_temp"
       ],
-      "definition": "CREATE OR REPLACE FUNCTION public.guard_capacity_allocation()\n RETURNS trigger\n LANGUAGE plpgsql\n SET search_path TO 'pg_catalog', 'public', 'pg_temp'\nAS $function$\nDECLARE parent customer_order; limit_value integer; used bigint;\nBEGIN\n  IF public.native_order_edit_allowed(CASE WHEN TG_OP='DELETE' THEN OLD.order_id ELSE NEW.order_id END) THEN\n    IF TG_OP='DELETE' THEN RETURN OLD; ELSE RETURN NEW; END IF;\n  END IF;\n  IF TG_OP<>'INSERT' THEN RAISE EXCEPTION 'ALLOCATION_AWARE_EDIT_REQUIRED'; END IF;\n  SELECT * INTO parent FROM customer_order WHERE id=NEW.order_id;\n  IF NOT parent.booking_managed OR NEW.pickup_day IS DISTINCT FROM (parent.scheduled_for AT TIME ZONE 'America/Toronto')::date\n    OR NOT EXISTS(SELECT 1 FROM booking_settings WHERE id='default' AND NEW.block_minute=ANY(block_minutes))\n    OR NOT EXISTS(SELECT 1 FROM order_item WHERE order_id=NEW.order_id AND capacity_group_id=NEW.group_id)\n    THEN RAISE EXCEPTION 'GROUP_ALLOCATION_INVALID'; END IF;\n  SELECT capacity_per_block INTO limit_value FROM capacity_group WHERE id=NEW.group_id AND NOT archived;\n  IF limit_value IS NULL THEN RAISE EXCEPTION 'GROUP_UNAVAILABLE'; END IF;\n  SELECT COALESCE(sum(a.quantity),0) INTO used FROM order_capacity_allocation a JOIN customer_order o ON o.id=a.order_id\n    WHERE a.pickup_day=NEW.pickup_day AND a.group_id=NEW.group_id AND a.block_minute=NEW.block_minute AND o.status<>'CANCELLED';\n  IF parent.status<>'CANCELLED' AND used+NEW.quantity>limit_value THEN RAISE EXCEPTION 'GROUP_CAPACITY'; END IF;\n  RETURN NEW;\nEND $function$\n"
+      "definition": "CREATE OR REPLACE FUNCTION public.guard_capacity_allocation()\n RETURNS trigger\n LANGUAGE plpgsql\n SET search_path TO 'pg_catalog', 'public', 'pg_temp'\nAS $function$\nDECLARE parent customer_order; limit_value integer; used bigint;\nBEGIN\n  IF public.native_order_edit_allowed(CASE WHEN TG_OP='DELETE' THEN OLD.order_id ELSE NEW.order_id END) THEN\n    IF TG_OP='DELETE' THEN RETURN OLD; ELSE RETURN NEW; END IF;\n  END IF;\n  IF TG_OP<>'INSERT' THEN RAISE EXCEPTION 'ALLOCATION_AWARE_EDIT_REQUIRED'; END IF;\n  SELECT * INTO parent FROM customer_order WHERE id=NEW.order_id;\n  IF NOT parent.booking_managed OR NEW.pickup_day IS DISTINCT FROM (parent.scheduled_for AT TIME ZONE 'America/Toronto')::date\n    OR NOT EXISTS(SELECT 1 FROM booking_settings WHERE id='default' AND NEW.block_minute=ANY(block_minutes))\n    OR NOT EXISTS(SELECT 1 FROM order_item WHERE order_id=NEW.order_id AND capacity_group_id=NEW.group_id)\n    THEN RAISE EXCEPTION 'GROUP_ALLOCATION_INVALID'; END IF;\n  SELECT public.effective_block_capacity(id,NEW.pickup_day,capacity_per_block) INTO limit_value FROM capacity_group WHERE id=NEW.group_id AND NOT archived;\n  IF limit_value IS NULL THEN RAISE EXCEPTION 'GROUP_UNAVAILABLE'; END IF;\n  SELECT COALESCE(sum(a.quantity),0) INTO used FROM order_capacity_allocation a JOIN customer_order o ON o.id=a.order_id\n    WHERE a.pickup_day=NEW.pickup_day AND a.group_id=NEW.group_id AND a.block_minute=NEW.block_minute AND o.status<>'CANCELLED';\n  IF parent.status<>'CANCELLED' AND used+NEW.quantity>limit_value THEN RAISE EXCEPTION 'GROUP_CAPACITY'; END IF;\n  RETURN NEW;\nEND $function$\n"
     },
     {
       "name": "guard_capacity_group",
@@ -2282,7 +2458,7 @@
       "config": [
         "search_path=pg_catalog, public, pg_temp"
       ],
-      "definition": "CREATE OR REPLACE FUNCTION public.guard_capacity_group()\n RETURNS trigger\n LANGUAGE plpgsql\n SET search_path TO 'pg_catalog', 'public', 'pg_temp'\nAS $function$\nBEGIN\n  IF TG_OP='DELETE' THEN RAISE EXCEPTION 'ARCHIVE_GROUP_INSTEAD'; END IF;\n  IF NEW.capacity_per_block<1 OR NEW.revision<0 OR NEW.code !~ '^[A-Z][A-Z0-9_]{0,63}$'\n    OR btrim(NEW.name)='' OR NEW.name<>btrim(NEW.name) OR length(NEW.name)>200 THEN RAISE EXCEPTION 'BOOKING_CONFIGURATION_INVALID'; END IF;\n  IF TG_OP='UPDATE' THEN\n    IF NEW.id<>OLD.id OR NEW.code<>OLD.code OR NEW.created_at<>OLD.created_at OR NEW.revision<>OLD.revision+1 THEN RAISE EXCEPTION 'BOOKING_CONFIGURATION_CONFLICT'; END IF;\n    IF NEW.archived AND EXISTS(SELECT 1 FROM product WHERE capacity_group_id=NEW.id) THEN RAISE EXCEPTION 'GROUP_HAS_PRODUCTS'; END IF;\n    IF EXISTS(SELECT 1 FROM order_capacity_allocation a JOIN customer_order o ON o.id=a.order_id\n      WHERE a.group_id=NEW.id AND o.status<>'CANCELLED'\n        AND a.pickup_day>=(clock_timestamp() AT TIME ZONE 'America/Toronto')::date\n      GROUP BY a.pickup_day,a.block_minute HAVING sum(a.quantity)>NEW.capacity_per_block) THEN RAISE EXCEPTION 'GROUP_CAPACITY_IN_USE'; END IF;\n  END IF;\n  RETURN NEW;\nEND $function$\n"
+      "definition": "CREATE OR REPLACE FUNCTION public.guard_capacity_group()\n RETURNS trigger\n LANGUAGE plpgsql\n SET search_path TO 'pg_catalog', 'public', 'pg_temp'\nAS $function$\nBEGIN\n  IF TG_OP='DELETE' THEN RAISE EXCEPTION 'ARCHIVE_GROUP_INSTEAD'; END IF;\n  IF NEW.capacity_per_block<1 OR NEW.revision<0 OR NEW.code !~ '^[A-Z][A-Z0-9_]{0,63}$'\n    OR btrim(NEW.name)='' OR NEW.name<>btrim(NEW.name) OR length(NEW.name)>200 THEN RAISE EXCEPTION 'BOOKING_CONFIGURATION_INVALID'; END IF;\n  IF TG_OP='UPDATE' THEN\n    IF NEW.id<>OLD.id OR NEW.code<>OLD.code OR NEW.created_at<>OLD.created_at OR NEW.revision<>OLD.revision+1 THEN RAISE EXCEPTION 'BOOKING_CONFIGURATION_CONFLICT'; END IF;\n    IF NEW.archived AND EXISTS(SELECT 1 FROM product WHERE capacity_group_id=NEW.id) THEN RAISE EXCEPTION 'GROUP_HAS_PRODUCTS'; END IF;\n    IF NEW.capacity_per_block<OLD.capacity_per_block AND EXISTS(SELECT 1 FROM order_capacity_allocation a JOIN customer_order o ON o.id=a.order_id\n      WHERE a.group_id=NEW.id AND o.status<>'CANCELLED'\n        AND a.pickup_day>=(clock_timestamp() AT TIME ZONE 'America/Toronto')::date\n        AND public.special_day_capacity(NEW.id,a.pickup_day) IS NULL\n      GROUP BY a.pickup_day,a.block_minute HAVING sum(a.quantity)>NEW.capacity_per_block) THEN RAISE EXCEPTION 'GROUP_CAPACITY_IN_USE'; END IF;\n  END IF;\n  RETURN NEW;\nEND $function$\n"
     },
     {
       "name": "guard_native_order_status",
@@ -2361,7 +2537,7 @@
       "config": [
         "search_path=pg_catalog, public, pg_temp"
       ],
-      "definition": "CREATE OR REPLACE FUNCTION public.protect_managed_booking()\n RETURNS trigger\n LANGUAGE plpgsql\n SET search_path TO 'pg_catalog', 'public', 'pg_temp'\nAS $function$\nBEGIN\n  IF public.native_order_edit_allowed(NEW.id) THEN\n    IF TG_OP='DELETE' THEN RETURN OLD; ELSE RETURN NEW; END IF;\n  END IF;\n  IF NOT OLD.booking_managed AND NEW.status IN ('CONFIRMED','PAID') AND NEW.status IS DISTINCT FROM OLD.status\n    AND EXISTS(SELECT 1 FROM order_item i JOIN product p ON p.id=i.product_id WHERE i.order_id=OLD.id\n      AND (i.capacity_group_id IS NOT NULL OR p.capacity_group_id IS NOT NULL)) THEN\n    RAISE EXCEPTION 'ALLOCATION_AWARE_REOPEN_REQUIRED' USING ERRCODE='23514';\n  END IF;\n  IF OLD.booking_managed AND (NEW.booking_managed IS DISTINCT FROM OLD.booking_managed OR NEW.scheduled_for IS DISTINCT FROM OLD.scheduled_for) THEN\n    RAISE EXCEPTION 'ALLOCATION_AWARE_EDIT_REQUIRED' USING ERRCODE='23514';\n  END IF;\n  IF OLD.booking_managed AND OLD.status='CANCELLED' AND NEW.status<>'CANCELLED' THEN\n    IF EXISTS(SELECT 1 FROM order_capacity_allocation a WHERE a.order_id=OLD.id\n      AND NOT EXISTS(SELECT 1 FROM booking_settings s WHERE s.id='default' AND a.block_minute=ANY(s.block_minutes)))\n      THEN RAISE EXCEPTION 'BOOKING_BLOCK_UNAVAILABLE' USING ERRCODE='23514'; END IF;\n    IF EXISTS(SELECT 1 FROM order_capacity_allocation a JOIN customer_order o ON o.id=a.order_id\n      JOIN capacity_group g ON g.id=a.group_id\n      WHERE (o.status<>'CANCELLED' OR o.id=OLD.id)\n        AND EXISTS(SELECT 1 FROM order_capacity_allocation own WHERE own.order_id=OLD.id\n          AND own.pickup_day=a.pickup_day AND own.group_id=a.group_id AND own.block_minute=a.block_minute)\n      GROUP BY a.pickup_day,a.group_id,a.block_minute,g.capacity_per_block HAVING sum(a.quantity)>g.capacity_per_block)\n      THEN RAISE EXCEPTION 'GROUP_CAPACITY' USING ERRCODE='23514'; END IF;\n  END IF;\n  RETURN NEW;\nEND $function$\n"
+      "definition": "CREATE OR REPLACE FUNCTION public.protect_managed_booking()\n RETURNS trigger\n LANGUAGE plpgsql\n SET search_path TO 'pg_catalog', 'public', 'pg_temp'\nAS $function$\nBEGIN\n  IF public.native_order_edit_allowed(NEW.id) THEN\n    IF TG_OP='DELETE' THEN RETURN OLD; ELSE RETURN NEW; END IF;\n  END IF;\n  IF NOT OLD.booking_managed AND NEW.status IN ('CONFIRMED','PAID') AND NEW.status IS DISTINCT FROM OLD.status\n    AND EXISTS(SELECT 1 FROM order_item i JOIN product p ON p.id=i.product_id WHERE i.order_id=OLD.id\n      AND (i.capacity_group_id IS NOT NULL OR p.capacity_group_id IS NOT NULL)) THEN\n    RAISE EXCEPTION 'ALLOCATION_AWARE_REOPEN_REQUIRED' USING ERRCODE='23514';\n  END IF;\n  IF OLD.booking_managed AND (NEW.booking_managed IS DISTINCT FROM OLD.booking_managed OR NEW.scheduled_for IS DISTINCT FROM OLD.scheduled_for) THEN\n    RAISE EXCEPTION 'ALLOCATION_AWARE_EDIT_REQUIRED' USING ERRCODE='23514';\n  END IF;\n  IF OLD.booking_managed AND OLD.status='CANCELLED' AND NEW.status<>'CANCELLED' THEN\n    IF EXISTS(SELECT 1 FROM order_capacity_allocation a WHERE a.order_id=OLD.id\n      AND NOT EXISTS(SELECT 1 FROM booking_settings s WHERE s.id='default' AND a.block_minute=ANY(s.block_minutes)))\n      THEN RAISE EXCEPTION 'BOOKING_BLOCK_UNAVAILABLE' USING ERRCODE='23514'; END IF;\n    IF EXISTS(SELECT 1 FROM order_capacity_allocation a JOIN customer_order o ON o.id=a.order_id\n      JOIN capacity_group g ON g.id=a.group_id\n      WHERE (o.status<>'CANCELLED' OR o.id=OLD.id)\n        AND EXISTS(SELECT 1 FROM order_capacity_allocation own WHERE own.order_id=OLD.id\n          AND own.pickup_day=a.pickup_day AND own.group_id=a.group_id AND own.block_minute=a.block_minute)\n      GROUP BY a.pickup_day,a.group_id,a.block_minute,g.capacity_per_block HAVING sum(a.quantity)>public.effective_block_capacity(a.group_id,a.pickup_day,g.capacity_per_block))\n      THEN RAISE EXCEPTION 'GROUP_CAPACITY' USING ERRCODE='23514'; END IF;\n  END IF;\n  RETURN NEW;\nEND $function$\n"
     },
     {
       "name": "protect_managed_item_totals",
@@ -2396,6 +2572,24 @@
         "search_path=pg_catalog, public, pg_temp"
       ],
       "definition": "CREATE OR REPLACE FUNCTION public.reject_unallocated_group()\n RETURNS trigger\n LANGUAGE plpgsql\n SET search_path TO 'pg_catalog', 'public', 'pg_temp'\nAS $function$\nBEGIN\n  IF EXISTS(SELECT 1 FROM customer_order o JOIN product p ON p.id=NEW.product_id\n    WHERE o.id=NEW.order_id AND NOT o.booking_managed AND o.status IN ('CONFIRMED','PAID') AND p.capacity_group_id IS NOT NULL)\n    THEN RAISE EXCEPTION 'ALLOCATION_AWARE_CREATE_REQUIRED' USING ERRCODE='23514'; END IF;\n  RETURN NEW;\nEND $function$\n"
+    },
+    {
+      "name": "special_day_capacity",
+      "args": "target uuid, pickup_day date",
+      "security_definer": false,
+      "config": [
+        "search_path=pg_catalog, public"
+      ],
+      "definition": "CREATE OR REPLACE FUNCTION public.special_day_capacity(target uuid, pickup_day date)\n RETURNS integer\n LANGUAGE sql\n STABLE\n SET search_path TO 'pg_catalog', 'public'\nAS $function$\n  SELECT r.capacity_per_block FROM public.special_day_rule r\n  WHERE r.group_id=target AND (extract(month FROM pickup_day)::integer*100+extract(day FROM pickup_day)::integer)=ANY(r.day_keys)\n  ORDER BY r.saved_revision DESC LIMIT 1\n$function$\n"
+    },
+    {
+      "name": "valid_special_day_keys",
+      "args": "keys integer[]",
+      "security_definer": false,
+      "config": [
+        "search_path=pg_catalog"
+      ],
+      "definition": "CREATE OR REPLACE FUNCTION public.valid_special_day_keys(keys integer[])\n RETURNS boolean\n LANGUAGE sql\n IMMUTABLE\n SET search_path TO 'pg_catalog'\nAS $function$\n  SELECT array_ndims(keys)=1 AND cardinality(keys) BETWEEN 1 AND 366\n    AND keys=ARRAY(SELECT DISTINCT key FROM unnest(keys) key ORDER BY key)\n    AND NOT EXISTS(SELECT 1 FROM unnest(keys) key WHERE key IS NULL OR key NOT BETWEEN 101 AND 1231\n      OR key%100 NOT BETWEEN 1 AND (ARRAY[31,29,31,30,31,30,31,31,30,31,30,31])[key/100])\n$function$\n"
     }
   ]
 }
