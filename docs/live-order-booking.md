@@ -306,12 +306,11 @@ The dev release is recorded below. Future deployments require an explicit reques
 ```
 
 PAYMENT accepts cash on Confirmed orders only. Overpayment is allowed and appears
-as credit; no balance cap is applied. PAID requires successful receipts minus
-successful refunds to cover the saved subtotal less discount. It atomically sets
-that amount as the final total and changes Confirmed to Paid without a receipt.
-An already agreed different total is rejected for pricing review, never silently
-replaced. PICKUP requires Paid and changes it to Completed with server time.
-Payments lock at Paid; this iOS release provides no undo, void or refund UI.
+as credit. PAID moves a Confirmed order to Paid at any balance, including when no
+cash has been received. It preserves an agreed final total or finalizes subtotal
+less discount, and creates no receipt. PICKUP requires Paid and changes it to
+Completed with server time. Paid locks new receipts, and the balance stays visible
+through pickup.
 
 Every action locks the parent order, validates its revision, and saves the write,
 audit and private OrderActionRequest identity/hash in one transaction. Request
@@ -320,19 +319,15 @@ exposing the previous result. Replaying a committed request succeeds even after
 later lifecycle transitions. Never generate a new identity after an uncertain
 result. Actor and timestamp are server-derived. Audit is append-only.
 
-The native guards in order-actions.sql protect allocation-backed orders from
-older connector bypasses: Paid requires covered ledger and saved final total,
-completion requires Paid, and new receipts require Confirmed. Parent row locks
-serialize receipts with lifecycle actions. Legacy rows keep their existing
-connector behavior; admin correction operations retain their existing permissions.
-The native callable enforces its stricter contract for every order it handles.
+The native guards require the expected final total for Paid, Paid before pickup,
+and Confirmed for new receipts. Parent row locks serialize receipts with lifecycle
+actions. The legacy `MarkOrderPaid` mutation accepts unmanaged orders only.
+Managed orders use the callable and its request ledger for safe retries.
 
-For existing environments, review the additive OrderActionRequest schema diff,
-apply the table while preserving native constraints/triggers, apply the repeatable
-order-actions.sql, extend the ORDERS database grants as above, then deploy only
-updateStaffOrder to an explicitly selected project. No activation flag is needed.
-Existing generated operation shapes are unchanged; the new private table has no
-SDK operation. No live payment or lifecycle writes are part of local verification.
+For this update, the managed release applies `migrations/mark-paid-with-balance.sql`
+after `migrations/order-actions.sql` and deploys both the staff-admin connector and
+Functions. The update uses the existing OrderActionRequest table and ORDERS runtime
+grants. The connector operation shape stays compatible with existing SDKs.
 
 Action tests cover authorization, tampered/exact cents and overflow, overpayment,
 paid/pickup guards, concurrency, transaction rollback, replay ownership, lost

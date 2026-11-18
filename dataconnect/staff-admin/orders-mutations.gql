@@ -326,7 +326,7 @@ mutation RemoveOrderItem($id: UUID!, $expectedRevision: Int!, $itemId: UUID!) @a
 mutation MarkOrderPaid($id: UUID!, $expectedRevision: Int!) @auth(expr: "auth.uid != '' && auth.token.firebase.sign_in_provider == 'google.com' && ((has(auth.token.staff) && auth.token.staff == true) || (has(auth.token.admin) && auth.token.admin == true))") @transaction {
   before: query @redact {
     order(id: $id) @check(expr: "this != null && this.revision == vars.expectedRevision", message: "ORDER_CONFLICT")
-      @check(expr: "this.status == 'CONFIRMED'", message: "ORDER_FORBIDDEN") { ...OrderFields }
+      @check(expr: "this.status == 'CONFIRMED' && !this.bookingManaged", message: "ORDER_FORBIDDEN") { ...OrderFields bookingManaged }
 
   }
   writeOrder: order_updateMany(where: {id: {eq_expr: "response.before.order.id"}, revision: {eq: $expectedRevision}}, data: {revision_expr: "vars.expectedRevision + 1", updatedAt_expr: "request.time", status: "PAID"})

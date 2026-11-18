@@ -1,11 +1,9 @@
 {
   "version": 1,
   "components": [
-    "schema",
     "connector",
     "functions"
   ],
-  "schemaMaintenance": "008-special-day-schema",
   "migrations": [
     {
       "id": "001-order-integrity",
@@ -63,6 +61,12 @@
       "file": "migrations/special-day-capacity.sql",
       "mode": "transaction",
       "verify": "migrations/verify-special-day-capacity.sql"
+    },
+    {
+      "id": "010-mark-paid-with-balance",
+      "file": "migrations/mark-paid-with-balance.sql",
+      "mode": "transaction",
+      "verify": "migrations/verify-mark-paid-with-balance.sql"
     }
   ],
   "checks": [

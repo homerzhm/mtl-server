@@ -22,6 +22,7 @@ test('fresh migration setup has no business seeds and only required schedule',as
   await assertEmpty(client);
   assert.deepEqual((await client.query('SELECT id,block_minutes FROM booking_settings')).rows,[{id:'default',block_minutes:[660,780,930,1080]}]);
   for(const t of ['staff_account','staff_role_change','staff_role_control']) assert.equal((await client.query(`SELECT count(*)::int n FROM ${t}`)).rows[0].n,0);
+  assert.equal((await client.query(await readFile(join(root,'migrations/verify-mark-paid-with-balance.sql'),'utf8'))).rows[0].ok,true);
   await verifyContract(client,manifest);await verifyPermissions(client,parameters);await assertPrivateLedger(client,parameters);
 });
 test('special-day schema maintenance creates SQL before registration and resumes an interrupted release',async()=>{
@@ -121,8 +122,8 @@ test('migration history enforces ordered prefix, exact checksums and no omitted 
   });
 });
 test('transaction migrations record atomically; failure resumes without reapplying successful DDL',async()=>{
-  const first=await migrateItem('010-probe','test/release/fixtures/007-add-probe.sql','test/release/fixtures/verify-probe.sql');
-  const fail=await migrateItem('011-fail','test/release/fixtures/008-fail.sql','test/release/fixtures/verify-probe.sql');
+  const first=await migrateItem('900-probe','test/release/fixtures/007-add-probe.sql','test/release/fixtures/verify-probe.sql');
+  const fail=await migrateItem('901-fail','test/release/fixtures/008-fail.sql','test/release/fixtures/verify-probe.sql');
   const m={...manifest,migrations:[...manifest.migrations,first,fail]};
   await assert.rejects(applyMigrations(client,m,'commit'),/division by zero/);
   assert.equal((await client.query('SELECT count(*)::int n FROM mtl_operations.probe')).rows[0].n,1);
@@ -131,8 +132,8 @@ test('transaction migrations record atomically; failure resumes without reapplyi
   assert.equal((await client.query('SELECT count(*)::int n FROM mtl_operations.probe')).rows[0].n,1);
 });
 test('nontransactional maintenance resumes after verification failure without duplicating effects',async()=>{
-  const probe=await migrateItem('010-probe','test/release/fixtures/007-add-probe.sql','test/release/fixtures/verify-probe.sql');
-  const item=await migrateItem('011-maintenance','test/release/fixtures/maintenance.mjs','test/release/fixtures/verify-maintenance.sql','maintenance');
+  const probe=await migrateItem('900-probe','test/release/fixtures/007-add-probe.sql','test/release/fixtures/verify-probe.sql');
+  const item=await migrateItem('901-maintenance','test/release/fixtures/maintenance.mjs','test/release/fixtures/verify-maintenance.sql','maintenance');
   const broken={...item,verify:'test/release/fixtures/008-fail.sql'};
   await assert.rejects(applyMigrations(client,{...manifest,migrations:[...manifest.migrations,probe,broken]},'commit'));
   assert.equal((await client.query('SELECT count(*)::int n FROM mtl_operations.maintenance_probe')).rows[0].n,1);
@@ -140,7 +141,7 @@ test('nontransactional maintenance resumes after verification failure without du
   await applyMigrations(client,{...manifest,migrations:[...manifest.migrations,probe,item]},'commit');
   assert.equal((await client.query('SELECT count(*)::int n FROM mtl_operations.maintenance_probe')).rows[0].n,1);
   // Test history is isolated from subsequent promotion assertions.
-  await client.query("DELETE FROM mtl_operations.migration WHERE id LIKE '010-%' OR id LIKE '011-%'");
+  await client.query("DELETE FROM mtl_operations.migration WHERE id IN ('900-probe','901-maintenance')");
 });
 test('component retries skip verified completed stages, retain failure and reject drift',async()=>{
   const commit='abc123';await startRelease(client,commit,manifest);

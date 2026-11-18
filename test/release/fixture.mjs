@@ -12,8 +12,9 @@ export async function fixture() {
   const body=await response.json();if(!response.ok||body.errors?.length) throw new Error(JSON.stringify(body));
   const client=new Client({connectionString:process.env.MTL_RELEASE_TEST_DATABASE_URL});await client.connect();
   const manifest=await json(join(root,'release/manifest.json'));
-  for(const migration of manifest.migrations.filter(x=>x.baselineOnly)) await client.query(await readFile(join(root,migration.file),'utf8'));
-  await client.query(await readFile(join(root,'migrations/special-day-capacity.sql'),'utf8'));
+  for(const migration of manifest.migrations.filter(x=>x.mode==='transaction')) {
+    await client.query(await readFile(join(root,migration.file),'utf8'));
+  }
   return client;
 }
 export async function grantFixtures(client) {

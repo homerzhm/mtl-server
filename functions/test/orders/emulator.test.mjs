@@ -13,9 +13,12 @@ const actor={uid:'order-test',token:{staff:true,firebase:{sign_in_provider:'goog
 const service=new OrderCreationService(pool,()=>new Date('2030-01-01T00:00:00Z'));
 let product;
 const encode=v=>Buffer.from(JSON.stringify(v)).toString('base64url');
-async function query(operationName,variables={},claims={staff:true}) {
+async function executeConnector(kind,operationName,variables,claims={staff:true}) {
   const token=`${encode({alg:'none'})}.${encode({sub:actor.uid,aud:'demo-mtl',iss:'https://securetoken.google.com/demo-mtl',...claims,firebase:{sign_in_provider:'google.com'},iat:Math.floor(Date.now()/1000),exp:Math.floor(Date.now()/1000)+3600})}.`;
-  const r=await fetch('http://127.0.0.1:9399/v1/projects/demo-mtl/locations/northamerica-northeast1/services/restaurant/connectors/staff-admin:executeQuery',{method:'POST',headers:{'Content-Type':'application/json','x-firebase-auth-token':token},body:JSON.stringify({operationName,variables})});
+  return fetch(`http://127.0.0.1:9399/v1/projects/demo-mtl/locations/northamerica-northeast1/services/restaurant/connectors/staff-admin:execute${kind}`,{method:'POST',headers:{'Content-Type':'application/json','x-firebase-auth-token':token},body:JSON.stringify({operationName,variables})});
+}
+async function query(operationName,variables={},claims) {
+  const r=await executeConnector('Query',operationName,variables,claims);
   const body=await r.json();assert.equal(r.ok&&!body.errors?.length,true,JSON.stringify(body));return body.data;
 }
 const lechon=randomUUID();
@@ -25,8 +28,9 @@ before(async()=>{
   const token=`${encode({alg:'none'})}.${encode({sub:actor.uid,aud:'demo-mtl',iss:'https://securetoken.google.com/demo-mtl',staff:true,firebase:{sign_in_provider:'google.com'},iat:Math.floor(Date.now()/1000),exp:Math.floor(Date.now()/1000)+3600})}.`;
   const r=await fetch('http://127.0.0.1:9399/v1/projects/demo-mtl/locations/northamerica-northeast1/services/restaurant/connectors/staff-admin:executeQuery',{method:'POST',headers:{'Content-Type':'application/json','x-firebase-auth-token':token},body:JSON.stringify({operationName:'ListOrders',variables:{}})});
   const result=await r.json();assert.equal(!result.errors?.length,true,JSON.stringify(result));
-  for(const migration of ['order-integrity.sql','order-paid-status.sql','order-capacity-booking.sql','order-actions.sql','payment-edits.sql','order-edits.sql','special-day-capacity.sql'])await pool.query(await readFile(new URL(`../../../migrations/${migration}`,import.meta.url),'utf8'));
-  await pool.query(await readFile(new URL('../../../migrations/order-actions.sql',import.meta.url),'utf8')); // Repeatable upgrade.
+  for(const migration of ['order-integrity.sql','order-paid-status.sql','order-capacity-booking.sql','order-actions.sql','payment-edits.sql','order-edits.sql','special-day-capacity.sql','mark-paid-with-balance.sql'])await pool.query(await readFile(new URL(`../../../migrations/${migration}`,import.meta.url),'utf8'));
+  await pool.query(await readFile(new URL('../../../migrations/mark-paid-with-balance.sql',import.meta.url),'utf8')); // Repeatable upgrade.
+  assert.equal((await pool.query(await readFile(new URL('../../../migrations/verify-mark-paid-with-balance.sql',import.meta.url),'utf8'))).rows[0].ok,true);
   assert.equal((await pool.query('SELECT count(*)::int n FROM capacity_group')).rows[0].n,0);
   // Test fixtures use the admin API; production migrations create no groups.
   await configuration.change(admin,{action:'CREATE_GROUP',id:lechon,code:'LECHON',name:'Lechon',capacityPerBlock:18});
@@ -236,7 +240,6 @@ async function actionOrder() {
 }
 test('cash overpayment, finalization and pickup are audited, atomic and retry safe',async()=>{
   const id=await actionOrder();
-  await assert.rejects(actions.perform(actor,action(id,0,'PAID')),/ORDER_BALANCE_DUE/);
   await assert.rejects(actions.perform(actor,action(id,0,'PICKUP')),/ORDER_NOT_PAID/);
   const pay=action(id,0,'PAYMENT',150);
   await actions.perform(actor,pay);await actions.perform(actor,pay); // lost response retry
@@ -257,21 +260,36 @@ test('cash overpayment, finalization and pickup are audited, atomic and retry sa
   assert.equal((await query('GetOrder',{id})).order.status,'COMPLETED');
   assert.equal(Number((await query('GetOrder',{id})).financials[0].balanceCents),-50);
 });
-test('Paid uses discounted totals and net successful ledger entries, preserving agreed totals',async()=>{
+test('Paid with a balance preserves the agreed total, ledger and pickup eligibility',async()=>{
   const id=await actionOrder();
-  const first=action(id,0,'PAYMENT',60),second=action(id,1,'PAYMENT',40);
-  await actions.perform(actor,first);await actions.perform(actor,second);
   await pool.query('UPDATE customer_order SET discount_cents=20,final_total_cents=90 WHERE id=$1',[id]);
-  await assert.rejects(actions.perform(actor,action(id,2,'PAID')),/ORDER_TOTAL_REVIEW/);
-  assert.equal((await pool.query('SELECT final_total_cents FROM customer_order WHERE id=$1',[id])).rows[0].final_total_cents,90);
-  await pool.query('UPDATE customer_order SET final_total_cents=NULL WHERE id=$1',[id]);
-  const refund=randomUUID();
-  await pool.query("INSERT INTO refund(id,payment_id,amount_cents,status,created_at) VALUES($1,$2,30,'SUCCEEDED',now()),($3,$2,5,'VOIDED',now())",[refund,first.requestId,randomUUID()]);
-  await assert.rejects(actions.perform(actor,action(id,2,'PAID')),/ORDER_BALANCE_DUE/);
-  await pool.query("UPDATE refund SET status='VOIDED' WHERE id=$1",[refund]);
-  await actions.perform(actor,action(id,2,'PAID'));
-  assert.equal((await pool.query('SELECT final_total_cents FROM customer_order WHERE id=$1',[id])).rows[0].final_total_cents,80);
-  assert.equal((await pool.query('SELECT count(*)::int n FROM payment WHERE order_id=$1',[id])).rows[0].n,2);
+  const stale=action(id,0,'PAID');
+  await actions.perform(actor,action(id,0,'PAYMENT',50));
+  await assert.rejects(actions.perform(actor,stale),/ORDER_CONFLICT/);
+  const paid=action(id,1,'PAID');
+  await actions.perform(actor,paid);await actions.perform(actor,paid);
+  const saved=(await pool.query('SELECT status,revision,discount_cents,final_total_cents FROM customer_order WHERE id=$1',[id])).rows[0];
+  assert.deepEqual(saved,{status:'PAID',revision:2,discount_cents:20,final_total_cents:90});
+  assert.equal(Number((await query('GetOrder',{id})).financials[0].balanceCents),40);
+  assert.equal((await pool.query("SELECT count(*)::int n FROM order_audit_event WHERE order_id=$1 AND action='ORDER_MARKED_PAID'",[id])).rows[0].n,1);
+  await assert.rejects(actions.perform(actor,action(id,2,'PAYMENT',40)),/ORDER_LOCKED/);
+  await actions.perform(actor,action(id,2,'PICKUP'));
+  const completed=await query('GetOrder',{id});
+  assert.equal(completed.order.status,'COMPLETED');
+  assert.equal(Number(completed.financials[0].balanceCents),40);
+  assert.equal((await pool.query('SELECT count(*)::int n FROM payment WHERE order_id=$1',[id])).rows[0].n,1);
+});
+test('Mark paid finalizes subtotal less discount at zero balance or with no cash',async()=>{
+  for (const paid of [0,80]) {
+    const id=await actionOrder();
+    await pool.query('UPDATE customer_order SET discount_cents=20 WHERE id=$1',[id]);
+    if (paid) await actions.perform(actor,action(id,0,'PAYMENT',paid));
+    await actions.perform(actor,action(id,paid ? 1 : 0,'PAID'));
+    const result=await query('GetOrder',{id});
+    assert.equal(result.order.finalTotalCents,80);
+    assert.equal(Number(result.financials[0].balanceCents),80-paid);
+    assert.equal((await pool.query('SELECT count(*)::int n FROM payment WHERE order_id=$1',[id])).rows[0].n,paid ? 1 : 0);
+  }
 });
 test('competing actions cannot bypass revision, insert twice or partially commit',async()=>{
   const id=await actionOrder(),a=action(id,0,'PAYMENT',100),b=action(id,0,'PAYMENT',100);
@@ -290,7 +308,7 @@ test('competing actions cannot bypass revision, insert twice or partially commit
 });
 test('native status/payment guards reject old mutation bypasses, including concurrent payment and Paid',async()=>{
   const id=await actionOrder();
-  await assert.rejects(pool.query("UPDATE customer_order SET status='PAID' WHERE id=$1",[id]),/ORDER_BALANCE_DUE/);
+  await assert.rejects(pool.query("UPDATE customer_order SET status='PAID' WHERE id=$1",[id]),/ORDER_TOTAL_REVIEW/);
   await assert.rejects(pool.query("UPDATE customer_order SET status='COMPLETED',completed_at=now() WHERE id=$1",[id]),/ORDER_NOT_PAID/);
   await actions.perform(actor,action(id,0,'PAYMENT',100));
   await assert.rejects(pool.query("UPDATE customer_order SET status='PAID' WHERE id=$1",[id]),/ORDER_TOTAL_REVIEW/);
@@ -312,6 +330,12 @@ test('order action callable rejects anonymous callers and enforces actual restri
     const body=await response.json();assert.equal(body.result.id,callableID,JSON.stringify(body));
   }
   assert.equal((await pool.query('SELECT count(*)::int n FROM payment WHERE order_id=$1',[callableID])).rows[0].n,1);
+  const balanceDueID=await actionOrder();
+  const paidResponse=await fetch(endpoint,{method:'POST',headers:{'Content-Type':'application/json',Authorization:`Bearer ${token}`},
+    body:JSON.stringify({data:action(balanceDueID,0,'PAID')})});
+  const paidBody=await paidResponse.json();
+  assert.equal(paidBody.result?.id,balanceDueID,JSON.stringify(paidBody));
+  assert.equal(Number((await query('GetOrder',{id:balanceDueID})).financials[0].balanceCents),100);
   const native=input();native.scheduledFor='2030-07-01T18:00:00.000Z';await service.create(actor,native);const id=native.id;
   await pool.query(`CREATE ROLE action_runtime LOGIN PASSWORD 'test-only';
     GRANT USAGE ON SCHEMA public TO action_runtime;
@@ -541,6 +565,29 @@ test('Paid corrections reopen only when owing, retain final total and serialize 
   if(order.status==='PAID'||order.status==='COMPLETED') {
     await actions.perform(admin,paymentEdit(id,order.revision,receipt.requestId,90));
   } else {assert.equal(order.status,'CONFIRMED');}
+});
+test('a managed order reopened by a cash correction must use the callable to mark Paid again',async()=>{
+  const id=await actionOrder(),receipt=action(id,0,'PAYMENT',100);
+  await actions.perform(actor,receipt);
+  await actions.perform(actor,action(id,1,'PAID'));
+  await actions.perform(actor,paymentEdit(id,2,receipt.requestId,50));
+  assert.equal((await savedOrder(id)).status,'CONFIRMED');
+
+  const rejected=await executeConnector('Mutation','MarkOrderPaid',{id,expectedRevision:3});
+  const body=await rejected.json();
+  assert.match(JSON.stringify(body.errors),/ORDER_FORBIDDEN/);
+  assert.equal((await savedOrder(id)).revision,3);
+
+  const paid=action(id,3,'PAID');
+  await actions.perform(actor,paid);
+  await actions.perform(actor,paid);
+  const result=await query('GetOrder',{id});
+  assert.equal(result.order.status,'PAID');
+  assert.equal(result.order.revision,4);
+  assert.equal(result.order.finalTotalCents,100);
+  assert.equal(Number(result.financials[0].balanceCents),50);
+  assert.equal((await pool.query('SELECT count(*)::int n FROM order_action_request WHERE id=$1',[paid.requestId])).rows[0].n,1);
+  assert.equal((await pool.query("SELECT count(*)::int n FROM order_audit_event WHERE order_id=$1 AND order_revision=4 AND action='ORDER_MARKED_PAID'",[id])).rows[0].n,1);
 });
 test('closed corrections require independent admin and preserve refunds even below their totals',async()=>{
   for(const status of ['COMPLETED','CANCELLED']) {

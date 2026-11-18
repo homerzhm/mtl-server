@@ -182,14 +182,12 @@ For legacy orders, money owing never blocks completion. Allocation-backed native
 orders additionally enforce the stricter payment/status guards described below. No order delete or audit-write operation
 is exposed.
 
-Order statuses are `CONFIRMED`, `PAID`,
-`COMPLETED`, and `CANCELLED`. `PAID` is a manual staff confirmation through
-`MarkOrderPaid(id, expectedRevision)`, intended for the UI's button. It does not
-create a payment, require a finalized total, or validate the ledger balance.
-Recording receipts, refunds, or price edits never automatically changes this
-status. The ledger remains the source for numeric balances; show it separately.
-Paid orders remain editable like confirmed orders. Admins can undo the manual
-mark using `ReopenOrder`; the original action stays in audit history.
+Order statuses are `CONFIRMED`, `PAID`, `COMPLETED`, and `CANCELLED`. Staff mark
+orders Paid at any balance. Marking Paid creates no payment, and the ledger
+continues to supply the balance. Managed orders use `updateStaffOrder`, which
+preserves an agreed final total or finalizes subtotal less discount. Unmanaged
+orders use `MarkOrderPaid`. Admins can undo a legacy manual mark using
+`ReopenOrder`, which retains the original action in audit history.
 
 | Operation | Contract |
 | --- | --- |
@@ -199,7 +197,7 @@ mark using `ReopenOrder`; the original action stays in audit history.
 | `UpdateOrderPricing` | Full replacement of discount, requested deposit and manual final total; omitted/null final total clears finalization. |
 | `UpdateOrderSchedule` | Sets or clears scheduled pickup. |
 | `AddOrderItem`, `UpdateOrderItem`, `RemoveOrderItem` | Maintain exact subtotal/item count in the same revision-checked transaction. Keep at least one item. Updates preserve catalog/name snapshots; notes are replaced. |
-| `MarkOrderPaid` | Staff/admin manually mark a confirmed order PAID; audited, revision-checked, no automatic receipt or balance check. |
+| `MarkOrderPaid` | Staff/admin manually mark a confirmed legacy order PAID. Managed orders use `updateStaffOrder` with action `PAID`. Both paths audit the change, check the revision and allow any balance without creating a receipt. |
 | `CompleteOrder` | Confirmed or paid to completed, regardless of payment/final-total state. |
 | `CancelOrder` | Requires explicit nonnegative cancellation charge; staff can cancel confirmed/paid orders, admins can also cancel completed orders. No automatic refund. |
 | `UpdateCancellationSettlement`, `ReopenOrder` | Admin only. Reopening clears lifecycle timestamps/cancellation charge; history preserves prior values. |

@@ -112,14 +112,7 @@ export class OrderActionService {
         payment = {id:saved.id,amountCents:saved.amount_cents,receivedAt:saved.received_at.toISOString()};
       } else if (input.action === 'PAID') {
         if (order.status !== 'CONFIRMED') throw new HttpsError('failed-precondition','ORDER_LOCKED');
-        const totals = await db.query(`SELECT
-          COALESCE((SELECT sum(amount_cents) FROM payment WHERE order_id=$1 AND status='SUCCEEDED'),0)
-          - COALESCE((SELECT sum(r.amount_cents) FROM refund r JOIN payment p ON p.id=r.payment_id
-            WHERE p.order_id=$1 AND r.status='SUCCEEDED'),0) AS net`,[input.id]);
-        const total = order.subtotal_cents - order.discount_cents;
-        if (order.final_total_cents !== null && order.final_total_cents !== total)
-          throw new HttpsError('failed-precondition','ORDER_TOTAL_REVIEW');
-        if (BigInt(totals.rows[0].net) < BigInt(total)) throw new HttpsError('failed-precondition','ORDER_BALANCE_DUE');
+        const total = order.final_total_cents ?? order.subtotal_cents - order.discount_cents;
         await db.query(`UPDATE customer_order SET status='PAID',final_total_cents=$3,revision=$2,updated_at=now() WHERE id=$1`,[input.id,revision,total]);
       } else {
         if (order.status !== 'PAID') throw new HttpsError('failed-precondition','ORDER_NOT_PAID');

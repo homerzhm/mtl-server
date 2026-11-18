@@ -213,11 +213,14 @@ This directory maintains Firebase SQL Connect (`restaurant`), backed by Cloud SQ
 - `updateStaffOrder` atomically records cash, marks Paid or completes pickup using
   stable request UUIDs, actor/payload ownership, parent revision locks and audit.
 - Cash is Confirmed-only; exact positive Int32 cents may exceed the balance.
-  Paid requires no outstanding saved subtotal less discount, finalizes that amount
-  without creating a receipt, and locks payments. Pickup requires Paid.
+  Confirmed orders can be marked Paid at any balance. The action keeps an agreed
+  final total or finalizes subtotal less discount without creating a receipt.
+  Paid locks new payments. Pickup requires Paid, and the balance stays visible.
+  Existing databases receive the updated guard in `migrations/mark-paid-with-balance.sql`.
 - Apply additive OrderActionRequest schema and `migrations/order-actions.sql`
   before the new callable. Managed native orders reject legacy payment/status
   bypasses; retain legacy rows' connector behavior and existing admin corrections.
+  The legacy `MarkOrderPaid` mutation is restricted to unmanaged orders.
 - ORDERS runtime now needs SELECT on payment/refund/action requests, INSERT on
   payment/action requests and column UPDATE only on customer_order revision,
   status, final_total_cents, completed_at and updated_at. No product/client UPDATE.
