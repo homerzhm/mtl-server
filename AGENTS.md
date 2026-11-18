@@ -109,13 +109,13 @@ This directory maintains Firebase SQL Connect (`restaurant`), backed by Cloud SQ
   per topic or trigger. Do not use `setGlobalOptions` for topic-specific settings.
   Bound database pools and instance counts together against the Cloud SQL connection
   budget; each function scales separately even within one codebase. Dev has 25
-  connections (three reserved): all seven current triggers use maxInstances 1,
-  concurrency 2 and pool max 2, totaling at most fourteen pooled connections. Staff's role
+  connections (three reserved): all eight current triggers use maxInstances 1,
+  concurrency 2 and pool max 2, totaling at most sixteen pooled connections. Staff's role
   control lock is specific to role changes, not a lock for unrelated topics.
 - Authorize callable requests before initializing external dependencies. Enforce
   permissions on the server, validate inputs, preserve known `HttpsError`s, and
   return sanitized errors for unexpected failures. Serialize timestamps explicitly.
-- Use topic-prefixed configuration parameters (currently `STAFF_*`) and dedicated
+- Use topic-prefixed configuration parameters (`STAFF_*`, `ORDERS_*`, and `REPORT_*`) and dedicated
   runtime identities with least-privilege IAM/database grants. Keep dotenv files,
   credentials, `functions/lib/`, and `functions/node_modules/` out of source control.
 - Put tests in `functions/test/<topic>/unit.test.mjs` and `emulator.test.mjs`.
@@ -290,3 +290,14 @@ This directory maintains Firebase SQL Connect (`restaurant`), backed by Cloud SQ
   context-table writes or connector EXECUTE on apply_native_order_edit. Preserve
   these guards/private table in future schema maintenance. Deploy compatible
   updateStaffOrder before the app; no deployment/live financial writes implied.
+
+
+## Admin Report
+
+- Report is a standalone manually entered CAD ledger. Google sign-in and strict
+  Boolean Admin authorize every callable operation, including Admin-only accounts.
+- Persist Toronto business dates as SQL dates and exact signed cents. A write
+  and its append-only audit revision commit atomically. Replay requires the same
+  actor and canonical payload. Deletion retains its full tombstone and history.
+- Follow `docs/live-report.md` for the callable, runtime grants, emulator checks
+  and the backend-first rollout. Use a dedicated Report runtime identity.

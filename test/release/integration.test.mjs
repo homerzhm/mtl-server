@@ -8,6 +8,7 @@ import {Client,withLock,verifyContract,assertPrivateLedger,assertEmpty,migration
 import {verifyPermissions} from '../../scripts/release/permissions.mjs';
 import {componentStage} from '../../scripts/release/cli.mjs';
 import {up as deploySpecialDaySchema} from '../../migrations/deploy-special-day-schema.mjs';
+import {up as deployReportSchema} from '../../migrations/deploy-report-schema.mjs';
 let client,manifest;
 before(async()=>{
   client=await fixture();manifest=await loadManifest();
@@ -56,6 +57,59 @@ test('special-day schema maintenance creates SQL before registration and resumes
   await verifyContract(client,manifest);
   await verifyPermissions(client,parameters);
   assert.equal((await client.query(await readFile(join(root,'migrations/verify-special-day-capacity.sql'),'utf8'))).rows[0].ok,true);
+});
+test('Report maintenance prepares both tables, restores native protections and keeps audit access private',async()=>{
+  await client.query('DROP TABLE public.report_entry_change, public.report_entry');
+  await client.query(`ALTER DEFAULT PRIVILEGES IN SCHEMA public GRANT SELECT ON TABLES TO firebasereader_release;
+    ALTER DEFAULT PRIVILEGES IN SCHEMA public GRANT SELECT, INSERT, UPDATE, DELETE ON TABLES TO firebasewriter_release`);
+  const assertReportPrivate=async()=>{
+    const {rows:[{exposed}]}=await client.query(`SELECT EXISTS (
+      SELECT 1 FROM unnest(ARRAY['firebasereader_release','firebasewriter_release']) AS roles(name)
+      CROSS JOIN unnest(ARRAY['public.report_entry','public.report_entry_change']) AS tables(name)
+      WHERE has_table_privilege(roles.name,tables.name,'SELECT,INSERT,UPDATE,DELETE')
+    ) AS exposed`);
+    assert.equal(exposed,false);
+  };
+  let registrations=0;
+  const firebase=async (command,args)=>{
+    assert.equal(command,'deploy');
+    assert.deepEqual(args,['--only','dataconnect:restaurant:schema','--non-interactive']);
+    registrations++;
+    const prerequisite=await client.query(await readFile(join(root,'migrations/verify-report-schema.sql'),'utf8'));
+    assert.equal(prerequisite.rows[0].ok,true);
+    await assertReportPrivate();
+    const {rows:[{checkRemoved, schemaAccess}]}=await client.query(`SELECT
+      NOT EXISTS (SELECT 1 FROM pg_constraint WHERE conname='special_day_rule_values_valid') AS "checkRemoved",
+      has_table_privilege('firebasereader_restaurant_public','public.report_entry','REFERENCES') AS "schemaAccess"`);
+    assert.equal(checkRemoved,true);
+    assert.equal(schemaAccess,true);
+    await assert.rejects(client.query('DELETE FROM public.special_day_rule WHERE false'),{code:'55000'});
+    await client.query('GRANT SELECT ON public.report_entry_change TO firebasereader_release');
+  };
+  try {
+    await assert.rejects(deployReportSchema(client,{parameters,firebase:async (...args)=>{
+      await firebase(...args);
+      throw new Error('Report registration interrupted');
+    }}),/Report registration interrupted/);
+    await assertReportPrivate();
+    await verifyPermissions(client,parameters);
+    await client.query('DELETE FROM public.special_day_rule WHERE false');
+    const {rows:[{ok}]}=await client.query(await readFile(join(root,'migrations/verify-special-day-capacity.sql'),'utf8'));
+    assert.equal(ok,true);
+  } finally {
+    await client.query(`ALTER DEFAULT PRIVILEGES IN SCHEMA public REVOKE SELECT ON TABLES FROM firebasereader_release;
+      ALTER DEFAULT PRIVILEGES IN SCHEMA public REVOKE SELECT, INSERT, UPDATE, DELETE ON TABLES FROM firebasewriter_release`);
+  }
+  await deployReportSchema(client,{firebase,parameters});
+  await deployReportSchema(client,{firebase,parameters});
+  assert.equal(registrations,3);
+  await client.query(await readFile(join(root,'migrations/report-constraints.sql'),'utf8'));
+  await verifyContract(client,manifest);
+  await verifyPermissions(client,parameters);
+  await rollback(async()=>{
+    await client.query('GRANT UPDATE(snapshot) ON public.report_entry_change TO release_report');
+    await assert.rejects(verifyPermissions(client,parameters),/UPDATE privilege/);
+  });
 });
 test('native protection tampering and inherited private grants are detected',async()=>{
   await rollback(async()=>{

@@ -1,6 +1,7 @@
 {
   "version": 1,
   "components": [
+    "schema",
     "connector",
     "functions"
   ],
@@ -67,6 +68,20 @@
       "file": "migrations/mark-paid-with-balance.sql",
       "mode": "transaction",
       "verify": "migrations/verify-mark-paid-with-balance.sql"
+    },
+    {
+      "id": "011-report-schema",
+      "file": "migrations/deploy-report-schema.mjs",
+      "mode": "maintenance",
+      "idempotent": true,
+      "procedure": "docs/live-report.md",
+      "verify": "migrations/verify-report-schema.sql"
+    },
+    {
+      "id": "012-report-constraints",
+      "file": "migrations/report-constraints.sql",
+      "mode": "transaction",
+      "verify": "migrations/verify-report-constraints.sql"
     }
   ],
   "checks": [
@@ -76,5 +91,6 @@
     "functions-unit",
     "emulators"
   ],
-  "databaseContract": "release/database-contract.json"
+  "databaseContract": "release/database-contract.json",
+  "schemaMaintenance": "011-report-schema"
 }

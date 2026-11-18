@@ -2,3 +2,4 @@
 export {registerStaffSignIn, setStaffRoles, reconcileStaffRoles} from './staff/handlers';
 
 export {createStaffOrder, updateStaffOrder, manageBookingConfiguration, getBookingAvailability} from './orders/handlers';
+export {manageReportEntries} from './report/handlers';

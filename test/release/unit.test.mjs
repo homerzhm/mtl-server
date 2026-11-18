@@ -30,7 +30,7 @@ test('generated environment configurations share all sources and function settin
   }
 });
 function parameters(t) {
-  return Object.fromEntries(['STAFF','ORDERS'].flatMap(topic=>{
+  return Object.fromEntries(['STAFF','ORDERS','REPORT'].flatMap(topic=>{
     const email=`mtl-${topic.toLowerCase()}-functions@${t.project}.iam.gserviceaccount.com`;
     return [[`${topic}_REGION`,t.functionsRegion],[`${topic}_SQL_INSTANCE`,t.connection],[`${topic}_SQL_DATABASE`,'restaurant'],[`${topic}_RUNTIME_SERVICE_ACCOUNT`,email],[`${topic}_SQL_USER`,email.replace('.gserviceaccount.com','')]];
   }));
@@ -98,7 +98,7 @@ test('full cloud verification checks identities, scheduler and backups without f
   const schema={source:{files:await files('dataconnect/schema')},datasources:[{postgresql:{database:'restaurant',schemaValidation:'COMPATIBLE',cloudSql:{instance:`projects/${t.project}/locations/${t.region}/instances/${t.instance}`}}}]};
   const connector={source:{files:await files('dataconnect/staff-admin')}};
   const functionResources=functionNames.map(name=>{
-    const staff=['registerStaffSignIn','setStaffRoles','reconcileStaffRoles'].includes(name),topic=staff?'STAFF':'ORDERS';
+    const staff=['registerStaffSignIn','setStaffRoles','reconcileStaffRoles'].includes(name),topic=staff?'STAFF':name==='manageReportEntries'?'REPORT':'ORDERS';
     return {name:`projects/${t.project}/locations/${t.functionsRegion}/functions/${name}`,labels:{'firebase-functions-codebase':'server'},state:'ACTIVE',updateTime:'2026-11-16T00:00:00Z',buildConfig:{runtime:'nodejs22'},
       serviceConfig:{uri:`https://${name.toLowerCase()}-example.run.app`,serviceAccountEmail:p[`${topic}_RUNTIME_SERVICE_ACCOUNT`],maxInstanceCount:1,maxInstanceRequestConcurrency:2,timeoutSeconds:staff?120:60,
         environmentVariables:Object.fromEntries(['SQL_INSTANCE','SQL_USER','SQL_DATABASE','REGION'].map(suffix=>[`${topic}_${suffix}`,p[`${topic}_${suffix}`]]))}};

@@ -769,6 +769,158 @@
       "column_default": "'SUCCEEDED'::text"
     },
     {
+      "table_name": "report_entry",
+      "column_name": "id",
+      "data_type": "uuid",
+      "udt_name": "uuid",
+      "is_nullable": "NO",
+      "column_default": null
+    },
+    {
+      "table_name": "report_entry",
+      "column_name": "amount_cents",
+      "data_type": "integer",
+      "udt_name": "int4",
+      "is_nullable": "NO",
+      "column_default": null
+    },
+    {
+      "table_name": "report_entry",
+      "column_name": "creator_uid",
+      "data_type": "text",
+      "udt_name": "text",
+      "is_nullable": "NO",
+      "column_default": null
+    },
+    {
+      "table_name": "report_entry",
+      "column_name": "day",
+      "data_type": "date",
+      "udt_name": "date",
+      "is_nullable": "NO",
+      "column_default": null
+    },
+    {
+      "table_name": "report_entry",
+      "column_name": "deleted_at",
+      "data_type": "timestamp with time zone",
+      "udt_name": "timestamptz",
+      "is_nullable": "YES",
+      "column_default": null
+    },
+    {
+      "table_name": "report_entry",
+      "column_name": "entered_at",
+      "data_type": "timestamp with time zone",
+      "udt_name": "timestamptz",
+      "is_nullable": "NO",
+      "column_default": null
+    },
+    {
+      "table_name": "report_entry",
+      "column_name": "entered_by",
+      "data_type": "text",
+      "udt_name": "text",
+      "is_nullable": "NO",
+      "column_default": null
+    },
+    {
+      "table_name": "report_entry",
+      "column_name": "notes",
+      "data_type": "text",
+      "udt_name": "text",
+      "is_nullable": "YES",
+      "column_default": null
+    },
+    {
+      "table_name": "report_entry",
+      "column_name": "revision",
+      "data_type": "integer",
+      "udt_name": "int4",
+      "is_nullable": "NO",
+      "column_default": null
+    },
+    {
+      "table_name": "report_entry",
+      "column_name": "type",
+      "data_type": "text",
+      "udt_name": "text",
+      "is_nullable": "NO",
+      "column_default": null
+    },
+    {
+      "table_name": "report_entry_change",
+      "column_name": "id",
+      "data_type": "uuid",
+      "udt_name": "uuid",
+      "is_nullable": "NO",
+      "column_default": null
+    },
+    {
+      "table_name": "report_entry_change",
+      "column_name": "entry_id",
+      "data_type": "uuid",
+      "udt_name": "uuid",
+      "is_nullable": "NO",
+      "column_default": null
+    },
+    {
+      "table_name": "report_entry_change",
+      "column_name": "actor_name",
+      "data_type": "text",
+      "udt_name": "text",
+      "is_nullable": "NO",
+      "column_default": null
+    },
+    {
+      "table_name": "report_entry_change",
+      "column_name": "actor_uid",
+      "data_type": "text",
+      "udt_name": "text",
+      "is_nullable": "NO",
+      "column_default": null
+    },
+    {
+      "table_name": "report_entry_change",
+      "column_name": "occurred_at",
+      "data_type": "timestamp with time zone",
+      "udt_name": "timestamptz",
+      "is_nullable": "NO",
+      "column_default": null
+    },
+    {
+      "table_name": "report_entry_change",
+      "column_name": "operation",
+      "data_type": "text",
+      "udt_name": "text",
+      "is_nullable": "NO",
+      "column_default": null
+    },
+    {
+      "table_name": "report_entry_change",
+      "column_name": "payload_hash",
+      "data_type": "text",
+      "udt_name": "text",
+      "is_nullable": "NO",
+      "column_default": null
+    },
+    {
+      "table_name": "report_entry_change",
+      "column_name": "revision",
+      "data_type": "integer",
+      "udt_name": "int4",
+      "is_nullable": "NO",
+      "column_default": null
+    },
+    {
+      "table_name": "report_entry_change",
+      "column_name": "snapshot",
+      "data_type": "jsonb",
+      "udt_name": "jsonb",
+      "is_nullable": "NO",
+      "column_default": null
+    },
+    {
       "table_name": "special_day_rule",
       "column_name": "id",
       "data_type": "uuid",
@@ -1808,6 +1960,160 @@
       "convalidated": true
     },
     {
+      "table_name": "report_entry",
+      "name": "report_entry_amount_cents_not_null",
+      "contype": "n",
+      "definition": "NOT NULL amount_cents",
+      "convalidated": true
+    },
+    {
+      "table_name": "report_entry",
+      "name": "report_entry_creator_uid_not_null",
+      "contype": "n",
+      "definition": "NOT NULL creator_uid",
+      "convalidated": true
+    },
+    {
+      "table_name": "report_entry",
+      "name": "report_entry_day_not_null",
+      "contype": "n",
+      "definition": "NOT NULL day",
+      "convalidated": true
+    },
+    {
+      "table_name": "report_entry",
+      "name": "report_entry_entered_at_not_null",
+      "contype": "n",
+      "definition": "NOT NULL entered_at",
+      "convalidated": true
+    },
+    {
+      "table_name": "report_entry",
+      "name": "report_entry_entered_by_not_null",
+      "contype": "n",
+      "definition": "NOT NULL entered_by",
+      "convalidated": true
+    },
+    {
+      "table_name": "report_entry",
+      "name": "report_entry_id_not_null",
+      "contype": "n",
+      "definition": "NOT NULL id",
+      "convalidated": true
+    },
+    {
+      "table_name": "report_entry",
+      "name": "report_entry_pkey",
+      "contype": "p",
+      "definition": "PRIMARY KEY (id)",
+      "convalidated": true
+    },
+    {
+      "table_name": "report_entry",
+      "name": "report_entry_revision_not_null",
+      "contype": "n",
+      "definition": "NOT NULL revision",
+      "convalidated": true
+    },
+    {
+      "table_name": "report_entry",
+      "name": "report_entry_type_not_null",
+      "contype": "n",
+      "definition": "NOT NULL type",
+      "convalidated": true
+    },
+    {
+      "table_name": "report_entry",
+      "name": "report_entry_values_check",
+      "contype": "c",
+      "definition": "CHECK (((type = ANY (ARRAY['creditEMT'::text, 'totalCash'::text, 'paybill'::text, 'adjust'::text, 'cashDepositPig'::text, 'creditEMTDepositPig'::text, 'otherCost'::text, 'weeklyPayroll'::text])) AND (amount_cents > '-2147483648'::integer) AND ((amount_cents > 0) OR ((type = 'adjust'::text) AND (amount_cents < 0))) AND (revision >= 0)))",
+      "convalidated": true
+    },
+    {
+      "table_name": "report_entry_change",
+      "name": "report_entry_change_actor_name_not_null",
+      "contype": "n",
+      "definition": "NOT NULL actor_name",
+      "convalidated": true
+    },
+    {
+      "table_name": "report_entry_change",
+      "name": "report_entry_change_actor_uid_not_null",
+      "contype": "n",
+      "definition": "NOT NULL actor_uid",
+      "convalidated": true
+    },
+    {
+      "table_name": "report_entry_change",
+      "name": "report_entry_change_entry_id_fkey",
+      "contype": "f",
+      "definition": "FOREIGN KEY (entry_id) REFERENCES report_entry(id) ON DELETE CASCADE",
+      "convalidated": true
+    },
+    {
+      "table_name": "report_entry_change",
+      "name": "report_entry_change_entry_id_not_null",
+      "contype": "n",
+      "definition": "NOT NULL entry_id",
+      "convalidated": true
+    },
+    {
+      "table_name": "report_entry_change",
+      "name": "report_entry_change_id_not_null",
+      "contype": "n",
+      "definition": "NOT NULL id",
+      "convalidated": true
+    },
+    {
+      "table_name": "report_entry_change",
+      "name": "report_entry_change_occurred_at_not_null",
+      "contype": "n",
+      "definition": "NOT NULL occurred_at",
+      "convalidated": true
+    },
+    {
+      "table_name": "report_entry_change",
+      "name": "report_entry_change_operation_not_null",
+      "contype": "n",
+      "definition": "NOT NULL operation",
+      "convalidated": true
+    },
+    {
+      "table_name": "report_entry_change",
+      "name": "report_entry_change_payload_hash_not_null",
+      "contype": "n",
+      "definition": "NOT NULL payload_hash",
+      "convalidated": true
+    },
+    {
+      "table_name": "report_entry_change",
+      "name": "report_entry_change_pkey",
+      "contype": "p",
+      "definition": "PRIMARY KEY (id)",
+      "convalidated": true
+    },
+    {
+      "table_name": "report_entry_change",
+      "name": "report_entry_change_revision_not_null",
+      "contype": "n",
+      "definition": "NOT NULL revision",
+      "convalidated": true
+    },
+    {
+      "table_name": "report_entry_change",
+      "name": "report_entry_change_snapshot_not_null",
+      "contype": "n",
+      "definition": "NOT NULL snapshot",
+      "convalidated": true
+    },
+    {
+      "table_name": "report_entry_change",
+      "name": "report_entry_change_values_check",
+      "contype": "c",
+      "definition": "CHECK (((revision >= 0) AND (operation = ANY (ARRAY['create'::text, 'update'::text, 'delete'::text])) AND ((operation = 'create'::text) = (revision = 0)) AND (payload_hash ~ '^[0-9a-f]{64}$'::text)))",
+      "convalidated": true
+    },
+    {
       "table_name": "special_day_rule",
       "name": "special_day_rule_capacity_per_block_not_null",
       "contype": "n",
@@ -2207,6 +2513,31 @@
       "table_name": "refund",
       "name": "refund_pkey",
       "definition": "CREATE UNIQUE INDEX refund_pkey ON public.refund USING btree (id)"
+    },
+    {
+      "table_name": "report_entry",
+      "name": "report_entry_day_id_idx",
+      "definition": "CREATE INDEX report_entry_day_id_idx ON public.report_entry USING btree (day, id)"
+    },
+    {
+      "table_name": "report_entry",
+      "name": "report_entry_pkey",
+      "definition": "CREATE UNIQUE INDEX report_entry_pkey ON public.report_entry USING btree (id)"
+    },
+    {
+      "table_name": "report_entry_change",
+      "name": "report_entry_change_entryId_idx",
+      "definition": "CREATE INDEX \"report_entry_change_entryId_idx\" ON public.report_entry_change USING btree (entry_id)"
+    },
+    {
+      "table_name": "report_entry_change",
+      "name": "report_entry_change_entryId_revision_uidx",
+      "definition": "CREATE UNIQUE INDEX \"report_entry_change_entryId_revision_uidx\" ON public.report_entry_change USING btree (entry_id, revision)"
+    },
+    {
+      "table_name": "report_entry_change",
+      "name": "report_entry_change_pkey",
+      "definition": "CREATE UNIQUE INDEX report_entry_change_pkey ON public.report_entry_change USING btree (id)"
     },
     {
       "table_name": "special_day_rule",

@@ -34,6 +34,10 @@ try {
     'ORDERS_RUNTIME_SERVICE_ACCOUNT=orders-tests@demo-mtl.iam.gserviceaccount.com',
     'ORDERS_REGION=northamerica-northeast1',
     `ORDERS_LOCAL_DATABASE_URL=${url}`,
+    'REPORT_SQL_INSTANCE=unused-emulator','REPORT_SQL_USER=postgres','REPORT_SQL_DATABASE=restaurant',
+    'REPORT_RUNTIME_SERVICE_ACCOUNT=report-tests@demo-mtl.iam.gserviceaccount.com',
+    'REPORT_REGION=northamerica-northeast1',
+    `REPORT_LOCAL_DATABASE_URL=${url}`,
   ].join('\n'));
   const config = join(directory,'firebase.json');
   await writeFile(config,JSON.stringify({dataconnect:{source:join(root,'dataconnect')},
@@ -42,7 +46,7 @@ try {
   const env = {...process.env, GCLOUD_PROJECT:'demo-mtl', GOOGLE_CLOUD_PROJECT:'demo-mtl',
     FIREBASE_AUTH_EMULATOR_HOST:'127.0.0.1:9099', STAFF_LOCAL_DATABASE_URL:url,
     FIREBASE_DATACONNECT_POSTGRESQL_STRING:url, STAFF_SQL_INSTANCE:'unused-emulator', STAFF_SQL_USER:'postgres',
-    STAFF_RUNTIME_SERVICE_ACCOUNT:'staff-tests@demo-mtl.iam.gserviceaccount.com', ORDERS_LOCAL_DATABASE_URL:url,
+    STAFF_RUNTIME_SERVICE_ACCOUNT:'staff-tests@demo-mtl.iam.gserviceaccount.com', ORDERS_LOCAL_DATABASE_URL:url, REPORT_LOCAL_DATABASE_URL:url,
     CI:'true', FIREBASE_CLI_DISABLE_UPDATE_CHECK:'true'};
   // Optional CLI path lets developers use a current CLI with their native Node.
   const cli = process.env.MTL_FIREBASE_CLI;

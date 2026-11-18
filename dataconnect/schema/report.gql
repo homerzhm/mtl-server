@@ -1,0 +1,26 @@
+# Report data is private to the admin callable. No connector operations expose it.
+type ReportEntry @table @index(fields: ["day", "id"]) {
+  id: UUID!
+  day: Date!
+  type: String!
+  amountCents: Int!
+  notes: String
+  creatorUid: String!
+  enteredBy: String!
+  enteredAt: Timestamp!
+  revision: Int!
+  deletedAt: Timestamp
+}
+
+type ReportEntryChange @table @unique(fields: ["entryId", "revision"]) {
+  id: UUID!
+  entry: ReportEntry!
+  entryId: UUID!
+  revision: Int!
+  operation: String!
+  actorUid: String!
+  actorName: String!
+  occurredAt: Timestamp!
+  payloadHash: String!
+  snapshot: Any!
+}

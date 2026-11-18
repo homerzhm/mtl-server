@@ -45,7 +45,7 @@ export async function verifyCloud(t,parameters,component='all',get=googleGet) {
     if(JSON.stringify(ours.map(f=>f.name.split('/').at(-1)).sort())!==JSON.stringify([...functions].sort())) throw new Error('Deployed server Function inventory differs');
     for(const f of ours) {
       const name=f.name.split('/').at(-1),staff=['registerStaffSignIn','setStaffRoles','reconcileStaffRoles'].includes(name);
-      const topic=staff?'STAFF':'ORDERS';
+      const topic=staff?'STAFF':name==='manageReportEntries'?'REPORT':'ORDERS';
       if(f.state!=='ACTIVE'||f.buildConfig?.runtime!=='nodejs22'||f.serviceConfig?.serviceAccountEmail!==parameters[`${topic}_RUNTIME_SERVICE_ACCOUNT`] ||
           f.serviceConfig?.maxInstanceCount!==1 || f.serviceConfig?.maxInstanceRequestConcurrency!==2 || f.serviceConfig?.timeoutSeconds!==(staff?120:60)) throw new Error(`Function runtime mismatch: ${name}`);
       const env=f.serviceConfig.environmentVariables??{};

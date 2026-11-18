@@ -14,6 +14,12 @@ export const policies = {
     update:{special_day_rule:['capacity_per_block','day_keys','revision','saved_revision','updated_at','updated_by'],customer_order:['revision','status','final_total_cents','completed_at','updated_at','cancelled_at','cancellation_total_cents'],payment:['amount_cents','status'],booking_settings:['block_minutes','revision','updated_at','updated_by'],capacity_group:['name','capacity_per_block','archived','revision','updated_at','updated_by']},
     execute:['lock_order_creation_sources(uuid[],uuid)','apply_native_order_edit(uuid,integer,jsonb,jsonb,jsonb)'],
   },
+  REPORT: {
+    select:['report_entry','report_entry_change'],
+    insert:['report_entry','report_entry_change'],
+    update:{report_entry:['amount_cents','notes','revision','deleted_at']},
+    execute:[],
+  },
 };
 export async function verifyPermissions(client,parameters) {
   const tables=(await client.query("SELECT tablename FROM pg_tables WHERE schemaname='public' ORDER BY tablename")).rows.map(x=>x.tablename);
@@ -50,6 +56,11 @@ export async function verifyPermissions(client,parameters) {
       has_any_column_privilege($1,'public.native_order_edit_context','SELECT,INSERT,UPDATE,REFERENCES') OR
       has_function_privilege($1,'public.apply_native_order_edit(uuid,integer,jsonb,jsonb,jsonb)','EXECUTE') exposed`,[user])).rows[0];
     if(result.exposed) throw new Error(`Private order edit access exposed to ${user}`);
+    const {rows: [{reportExposed}]} = await client.query(`SELECT EXISTS (
+      SELECT 1 FROM unnest(ARRAY['public.report_entry','public.report_entry_change']) AS report(name)
+      WHERE has_table_privilege($1,name,'SELECT,INSERT,UPDATE,DELETE,TRUNCATE,REFERENCES,TRIGGER')
+        OR has_any_column_privilege($1,name,'SELECT,INSERT,UPDATE,REFERENCES')) AS "reportExposed"`,[user]);
+    if(reportExposed) throw new Error(`Private Report data exposed to ${user}`);
   }
   const publicAccess=(await client.query(`SELECT EXISTS(SELECT 1 FROM pg_proc p JOIN pg_namespace n ON n.oid=p.pronamespace,
     LATERAL aclexplode(COALESCE(p.proacl,acldefault('f',p.proowner))) a WHERE n.nspname='public'
