@@ -7,6 +7,7 @@ import {OrderCreationService} from '../../lib/orders/service.js';
 import {BookingConfigurationService,BookingAvailabilityService} from '../../lib/orders/capacity.js';
 import {OrderEditService} from '../../lib/orders/edits.js';
 import {OrderActionService} from '../../lib/orders/actions.js';
+import {HistoricalOrderImportService} from '../../lib/orders/historical-import.js';
 assert.equal(process.env.GCLOUD_PROJECT,'demo-mtl');
 const pool=new pg.Pool({connectionString:'postgresql://postgres:test-only@127.0.0.1:15432/restaurant',max:8});
 const actor={uid:'order-test',token:{staff:true,firebase:{sign_in_provider:'google.com'}}};
@@ -28,7 +29,7 @@ before(async()=>{
   const token=`${encode({alg:'none'})}.${encode({sub:actor.uid,aud:'demo-mtl',iss:'https://securetoken.google.com/demo-mtl',staff:true,firebase:{sign_in_provider:'google.com'},iat:Math.floor(Date.now()/1000),exp:Math.floor(Date.now()/1000)+3600})}.`;
   const r=await fetch('http://127.0.0.1:9399/v1/projects/demo-mtl/locations/northamerica-northeast1/services/restaurant/connectors/staff-admin:executeQuery',{method:'POST',headers:{'Content-Type':'application/json','x-firebase-auth-token':token},body:JSON.stringify({operationName:'ListOrders',variables:{}})});
   const result=await r.json();assert.equal(!result.errors?.length,true,JSON.stringify(result));
-  for(const migration of ['order-integrity.sql','order-paid-status.sql','order-capacity-booking.sql','order-actions.sql','payment-edits.sql','order-edits.sql','special-day-capacity.sql','mark-paid-with-balance.sql'])await pool.query(await readFile(new URL(`../../../migrations/${migration}`,import.meta.url),'utf8'));
+  for(const migration of ['order-integrity.sql','order-paid-status.sql','order-capacity-booking.sql','order-actions.sql','payment-edits.sql','order-edits.sql','special-day-capacity.sql','mark-paid-with-balance.sql','historical-order-import.sql'])await pool.query(await readFile(new URL(`../../../migrations/${migration}`,import.meta.url),'utf8'));
   await pool.query(await readFile(new URL('../../../migrations/mark-paid-with-balance.sql',import.meta.url),'utf8')); // Repeatable upgrade.
   assert.equal((await pool.query(await readFile(new URL('../../../migrations/verify-mark-paid-with-balance.sql',import.meta.url),'utf8'))).rows[0].ok,true);
   assert.equal((await pool.query('SELECT count(*)::int n FROM capacity_group')).rows[0].n,0);
@@ -885,4 +886,128 @@ test('a rule racing order creation commits atomically with its configuration rev
   assert.equal(revision,change.value.rule.savedRevision);
   assert.equal(block.capacity,0);
   assert.equal(block.booked,booking.status==='fulfilled'?'2':'1');
+});
+
+const historicalAdmin = {uid: 'historical-admin', token: {admin: true, firebase: {sign_in_provider: 'google.com'}}};
+const historicalPickup = '2025-11-01T16:37:00.000Z';
+function historicalInput(productId, expectedRevision = 0) {
+  return {id: randomUUID(), items: [{id: randomUUID(), productId, quantity: 1, expectedRevision}],
+    scheduledFor: historicalPickup, payments: [{amountCents: 10000}, {amountCents: 20000}]};
+}
+
+test('historical import preserves receipts, audit dates and balance using restricted runtime grants', async () => {
+  const productId = randomUUID(), clientId = randomUUID();
+  await pool.query(`INSERT INTO product(id,name,price_cents,is_active,capacity_group_id,revision,created_at)
+    VALUES($1,'Historical 70LB',32000,false,$2,2,now())`, [productId, lechon]);
+  await pool.query("INSERT INTO client(id,phone_number,revision,created_at) VALUES($1,'+14165550191',0,now())", [clientId]);
+  const v = {...historicalInput(productId, 2), clientId, contactPhoneNumber: '4165550191',
+    createdAt: '2025-10-22T14:20:00.000Z'};
+  v.payments[0].receivedAt = '2025-10-22T15:10:00.000Z';
+  await pool.query(`CREATE ROLE historical_runtime NOLOGIN;
+    GRANT USAGE ON SCHEMA public TO historical_runtime;
+    GRANT SELECT ON product,client,customer_order,order_item,order_capacity_allocation,order_creation_request TO historical_runtime;
+    GRANT INSERT ON customer_order,order_item,payment,order_creation_request,order_audit_event TO historical_runtime;
+    GRANT UPDATE(revision,status,final_total_cents,completed_at) ON customer_order TO historical_runtime;
+    GRANT EXECUTE ON FUNCTION public.lock_order_creation_sources(uuid[],uuid) TO historical_runtime`);
+  const restricted = new pg.Pool({connectionString: 'postgresql://postgres:test-only@127.0.0.1:15432/restaurant',
+    max: 2, options: '-c role=historical_runtime'});
+  try {
+    const importer = new HistoricalOrderImportService(restricted);
+    assert.deepEqual(await Promise.all([importer.importOrder(historicalAdmin, v), importer.importOrder(historicalAdmin, v)]),
+      [{id: v.id}, {id: v.id}]);
+    await pool.query('UPDATE product SET price_cents=33000,revision=revision+1 WHERE id=$1', [productId]);
+    assert.deepEqual(await importer.importOrder(historicalAdmin, v), {id: v.id});
+    await assert.rejects(importer.importOrder({...historicalAdmin, uid: 'other-admin'}, v), {code: 'already-exists'});
+    await assert.rejects(importer.importOrder(historicalAdmin, {...v, notes: 'Different'}), {code: 'already-exists'});
+    await assert.rejects(service.create(actor, {...input(), id: v.id}), {code: 'already-exists'});
+
+    const {order, financials: [summary]} = await query('GetOrder', {id: v.id});
+    assert.equal(order.status, 'COMPLETED');
+    assert.equal(order.revision, 4);
+    assert.equal(order.finalTotalCents, 32000);
+    assert.equal(order.subtotalCents, 32000);
+    assert.equal(Date.parse(order.createdAt), Date.parse(v.createdAt));
+    assert.equal(Date.parse(order.scheduledFor), Date.parse(historicalPickup));
+    assert.equal(Date.parse(order.completedAt), Date.parse(historicalPickup));
+    assert.equal(Number(summary.netPaidCents), 30000);
+    assert.equal(Number(summary.balanceCents), 2000);
+    const {orderItems: [item]} = await query('ListOrderItems', {id: v.id});
+    assert.equal(item.unitPriceCents, 32000);
+    assert.equal(item.capacityGroupId, null);
+    assert.deepEqual((await query('ListOrderCapacityAllocations', {id: v.id})).orderCapacityAllocations, []);
+    const {payments} = await query('ListOrderPayments', {id: v.id});
+    assert.deepEqual(payments.map(payment => [payment.method, payment.status, payment.amountCents, Date.parse(payment.receivedAt)]),
+      [['CASH', 'SUCCEEDED', 10000, Date.parse(v.payments[0].receivedAt)], ['CASH', 'SUCCEEDED', 20000, Date.parse(historicalPickup)]]);
+    const {orderAuditEvents: events} = await query('ListOrderAuditEvents', {id: v.id});
+    assert.deepEqual(events.map(event => event.action),
+      ['ORDER_CREATED', 'PAYMENT_RECEIVED', 'PAYMENT_RECEIVED', 'ORDER_MARKED_PAID', 'ORDER_COMPLETED']);
+    assert.ok(events.every((event, revision) => event.actorUid === historicalAdmin.uid && event.orderRevision === revision));
+    assert.ok(Date.parse(events[0].changes.historicalImport.importedAt) > Date.parse(historicalPickup));
+    assert.deepEqual(events.map(event => Date.parse(event.occurredAt)),
+      [v.createdAt, v.payments[0].receivedAt, historicalPickup, historicalPickup, historicalPickup].map(Date.parse));
+    assert.equal((await query('GetClientSummary', {id: clientId})).clientDirectoryEntries[0].orderCount.toString(), '1');
+    await assert.rejects(restricted.query("UPDATE customer_order SET status='CONFIRMED',completed_at=NULL WHERE id=$1", [v.id]),
+      /HISTORICAL_ORDER_CLOSED/);
+    const reopen = await executeConnector('Mutation', 'ReopenOrder', {id: v.id, expectedRevision: order.revision}, {admin: true});
+    assert.match(JSON.stringify(await reopen.json()), /ORDER_CONFLICT/);
+    const {rows: [{id: paymentId}]} = await pool.query('SELECT id FROM payment WHERE order_id=$1 AND amount_cents=10000', [v.id]);
+    await actions.perform(historicalAdmin, {...action(v.id, 4, 'PAYMENT_EDIT', 9000), paymentId});
+    const corrected = await query('GetOrder', {id: v.id});
+    assert.equal(corrected.order.status, 'COMPLETED');
+    assert.equal(Number(corrected.financials[0].balanceCents), 3000);
+  } finally {
+    await restricted.end();
+    await pool.query('DROP OWNED BY historical_runtime; DROP ROLE historical_runtime');
+  }
+});
+
+test('historical callable permits Google Admin only and defaults omitted event timestamps to pickup', async () => {
+  const v = historicalInput(product, (await pool.query('SELECT revision FROM product WHERE id=$1', [product])).rows[0].revision);
+  const call = async claims => {
+    const headers = {'Content-Type': 'application/json'};
+    if (claims) {
+      const token = `${encode({alg:'none'})}.${encode({sub:historicalAdmin.uid,aud:'demo-mtl',
+        iss:'https://securetoken.google.com/demo-mtl', firebase:{sign_in_provider:'google.com'},
+        iat:Math.floor(Date.now()/1000),exp:Math.floor(Date.now()/1000)+3600,...claims})}.`;
+      headers.Authorization = `Bearer ${token}`;
+    }
+    const url = 'http://127.0.0.1:5001/demo-mtl/northamerica-northeast1/importHistoricalOrder';
+    const response = await fetch(url, {method: 'POST', headers, body: JSON.stringify({data: v})});
+    return response.json();
+  };
+  assert.equal((await call()).error.status, 'UNAUTHENTICATED');
+  assert.equal((await call({staff: true})).error.status, 'PERMISSION_DENIED');
+  assert.equal((await call({admin: 'true'})).error.status, 'PERMISSION_DENIED');
+  assert.equal((await call({admin: true, firebase: {sign_in_provider: 'password'}})).error.status, 'PERMISSION_DENIED');
+  const saved = await call({admin: true});
+  assert.deepEqual(saved, {result: {id: v.id}});
+  assert.deepEqual(await call({admin: true}), saved);
+  assert.equal(Date.parse((await query('GetOrder', {id: v.id})).order.createdAt), Date.parse(historicalPickup));
+  assert.ok((await query('ListOrderPayments', {id: v.id})).payments.every(payment =>
+    Date.parse(payment.receivedAt) === Date.parse(historicalPickup)));
+});
+
+test('historical import rejects stale or missing products and rolls back failure after financial writes', async () => {
+  const importer = new HistoricalOrderImportService(pool);
+  const v = historicalInput(product, (await pool.query('SELECT revision FROM product WHERE id=$1', [product])).rows[0].revision);
+  await assert.rejects(importer.importOrder(historicalAdmin, {...v, scheduledFor: '9999-01-01T00:00:00Z'}), /HISTORICAL_PICKUP_REQUIRED/);
+  await assert.rejects(importer.importOrder(historicalAdmin, {...v, items: [...v.items,
+    {id: randomUUID(), productId: randomUUID(), quantity: 1, expectedRevision: 0}]}), /PRODUCT_UNAVAILABLE/);
+  await assert.rejects(importer.importOrder(historicalAdmin, {...v, items: [{...v.items[0], expectedRevision: 99}]}), /CATALOG_CHANGED/);
+  const liveOrder = (await pool.query('SELECT id FROM order_creation_request WHERE id<>$1 LIMIT 1', [v.id])).rows[0].id;
+  await assert.rejects(importer.importOrder(historicalAdmin, {...v, id: liveOrder}), {code: 'already-exists'});
+  await pool.query(`CREATE FUNCTION public.reject_test_historical_request() RETURNS trigger LANGUAGE plpgsql AS $$
+    BEGIN RAISE EXCEPTION 'test import failure'; END $$;
+    CREATE TRIGGER reject_test_historical_request BEFORE INSERT ON order_creation_request
+    FOR EACH ROW WHEN (NEW.id = '${v.id}') EXECUTE FUNCTION public.reject_test_historical_request()`);
+  try {
+    await assert.rejects(importer.importOrder(historicalAdmin, v), /test import failure/);
+    for (const [table, key] of [['customer_order', 'id'], ['order_item', 'order_id'], ['payment', 'order_id'],
+      ['order_audit_event', 'order_id'], ['order_capacity_allocation', 'order_id'], ['order_creation_request', 'id']]) {
+      assert.equal((await pool.query(`SELECT count(*)::int AS n FROM ${table} WHERE ${key}=$1`, [v.id])).rows[0].n, 0, table);
+    }
+  } finally {
+    await pool.query('DROP TRIGGER reject_test_historical_request ON order_creation_request; DROP FUNCTION public.reject_test_historical_request()');
+  }
+  assert.deepEqual(await importer.importOrder(historicalAdmin, v), {id: v.id});
 });

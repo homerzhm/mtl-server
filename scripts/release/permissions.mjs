@@ -44,7 +44,7 @@ export async function verifyPermissions(client,parameters) {
         if(actual!==wanted) throw new Error(`${topic} unexpected UPDATE privilege on ${table}.${column}`);
       }
     }
-    for(const routine of ['lock_order_creation_sources(uuid[],uuid)','apply_native_order_edit(uuid,integer,jsonb,jsonb,jsonb)']) {
+    for(const routine of ['lock_order_creation_sources(uuid[],uuid)','apply_native_order_edit(uuid,integer,jsonb,jsonb,jsonb)','guard_historical_order_reopen()']) {
       const actual=(await client.query("SELECT has_function_privilege($1,$2,'EXECUTE') ok",[user,`public.${routine}`])).rows[0].ok;
       if(actual!==policy.execute.includes(routine)) throw new Error(`${topic} unexpected EXECUTE on ${routine}`);
     }
@@ -56,6 +56,9 @@ export async function verifyPermissions(client,parameters) {
       has_any_column_privilege($1,'public.native_order_edit_context','SELECT,INSERT,UPDATE,REFERENCES') OR
       has_function_privilege($1,'public.apply_native_order_edit(uuid,integer,jsonb,jsonb,jsonb)','EXECUTE') exposed`,[user])).rows[0];
     if(result.exposed) throw new Error(`Private order edit access exposed to ${user}`);
+    const {rows: [{historicalGuardExposed}]} = await client.query(
+      `SELECT has_function_privilege($1,'public.guard_historical_order_reopen()','EXECUTE') AS "historicalGuardExposed"`, [user]);
+    if(historicalGuardExposed) throw new Error(`Historical order guard execution exposed to ${user}`);
     const {rows: [{reportExposed}]} = await client.query(`SELECT EXISTS (
       SELECT 1 FROM unnest(ARRAY['public.report_entry','public.report_entry_change']) AS report(name)
       WHERE has_table_privilege($1,name,'SELECT,INSERT,UPDATE,DELETE,TRUNCATE,REFERENCES,TRIGGER')
@@ -64,6 +67,6 @@ export async function verifyPermissions(client,parameters) {
   }
   const publicAccess=(await client.query(`SELECT EXISTS(SELECT 1 FROM pg_proc p JOIN pg_namespace n ON n.oid=p.pronamespace,
     LATERAL aclexplode(COALESCE(p.proacl,acldefault('f',p.proowner))) a WHERE n.nspname='public'
-    AND p.proname IN ('apply_native_order_edit','lock_order_creation_sources') AND a.grantee=0 AND a.privilege_type='EXECUTE') exposed`)).rows[0];
+    AND p.proname IN ('apply_native_order_edit','lock_order_creation_sources','guard_historical_order_reopen') AND a.grantee=0 AND a.privilege_type='EXECUTE') exposed`)).rows[0];
   if(publicAccess.exposed) throw new Error('Private helper execution granted to PUBLIC');
 }

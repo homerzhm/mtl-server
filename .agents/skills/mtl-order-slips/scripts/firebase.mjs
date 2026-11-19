@@ -30,7 +30,7 @@ export async function session(environment) {
   const apiKey = signedIn.apiKey;
   const claims = JSON.parse(Buffer.from(signedIn.idToken.split('.')[1], 'base64url').toString());
   checkActor(claims, t.project);
-  return {...t, uid: claims.sub, token: signedIn.idToken, apiKey};
+  return {...t, uid: claims.sub, token: signedIn.idToken, apiKey, isAdmin: claims.admin === true};
 }
 export async function request(s, kind, operation, variables = {}, fetcher = fetch) {
   let url, body, headers = {'Content-Type': 'application/json'};
@@ -39,7 +39,7 @@ export async function request(s, kind, operation, variables = {}, fetcher = fetc
     url = `https://firebasedataconnect.googleapis.com/v1/projects/${s.project}/locations/${s.region}/services/restaurant/connectors/staff-admin:execute${kind === 'query' ? 'Query' : 'Mutation'}?key=${encodeURIComponent(s.apiKey)}`;
     headers['x-firebase-auth-token'] = s.token;
     body = {operationName: operation, variables};
-  } else if (kind === 'callable' && ['getBookingAvailability', 'createStaffOrder'].includes(operation)) {
+  } else if (kind === 'callable' && ['getBookingAvailability', 'createStaffOrder', 'importHistoricalOrder'].includes(operation)) {
     url = `https://${s.region}-${s.project}.cloudfunctions.net/${operation}`;
     headers.Authorization = `Bearer ${s.token}`;
     body = {data: variables};
@@ -48,11 +48,17 @@ export async function request(s, kind, operation, variables = {}, fetcher = fetc
   const result = await response.json();
   if (!response.ok || result.error || result.errors?.length) {
     const error = result.error ?? result.errors?.[0];
-    throw new Error(`${response.status}: ${error?.status ?? ''} ${error?.message ?? 'API failed'}`);
+    const failure = new Error(`${response.status}: ${error?.status ?? ''} ${error?.message ?? 'API failed'}`);
+    if (operation === 'importHistoricalOrder') failure.callableStatus = error?.status;
+    throw failure;
   }
   if (kind === 'callable') {
     if (!Object.hasOwn(result, 'result') && !Object.hasOwn(result, 'data')) throw new Error('Malformed callable response; result uncertain');
-    return result.result ?? result.data;
+    const saved = result.result ?? result.data;
+    if (operation === 'importHistoricalOrder' && saved?.id !== variables.id?.toLowerCase()) {
+      throw new Error('Historical import returned an unexpected ID; result uncertain');
+    }
+    return saved;
   }
   if (!Object.hasOwn(result, 'data')) throw new Error('Malformed connector response; result uncertain');
   return result.data;
@@ -61,8 +67,13 @@ export async function main(file) {
   const input = JSON.parse(await readFile(file, 'utf8'));
   target(input.environment); // Fail before authentication or network access if omitted.
   const s = await session(input.environment);
+  const historicalImport = input.kind === 'callable' && input.operation === 'importHistoricalOrder';
+  const historicalAuthCheck = input.kind === 'auth-check' && input.mode === 'historical';
+  if ((historicalImport || historicalAuthCheck) && !s.isAdmin) {
+    throw new Error('Historical import requires a Google Firebase Admin session');
+  }
   if (input.kind === 'auth-check') return {project: s.project, uid: s.uid, email: 'homerzhm@gmail.com'};
-  const mutating = input.kind === 'mutation' || input.operation === 'createStaffOrder';
+  const mutating = input.kind === 'mutation' || input.operation === 'createStaffOrder' || historicalImport;
   if (!mutating) return request(s, input.kind, input.operation, input.variables);
   if (input.approved !== true || !input.journalPath) throw new Error('A user-approved preview and private journalPath are required');
   if (!input.variables?.id) throw new Error('Stable UUID required');
@@ -81,7 +92,16 @@ export async function main(file) {
       if (input.retryAuthorized !== true) throw new Error('Previous outcome may be uncertain; reconcile reads and get explicit retry approval');
     }
     await writeFile(journalPath, JSON.stringify({snapshot, state: 'uncertain', attemptedAt: new Date().toISOString()}, null, 2), {mode: 0o600});
-    const result = await request(s, input.kind, input.operation, input.variables);
+    let result;
+    try {
+      result = await request(s, input.kind, input.operation, input.variables);
+    } catch (error) {
+      if (historicalImport && ['INVALID_ARGUMENT', 'FAILED_PRECONDITION', 'PERMISSION_DENIED', 'UNAUTHENTICATED', 'ABORTED']
+        .includes(error.callableStatus)) {
+        await writeFile(journalPath, JSON.stringify({snapshot, state: 'rejected', status: error.callableStatus}, null, 2), {mode: 0o600});
+      }
+      throw error;
+    }
     await writeFile(journalPath, JSON.stringify({snapshot, state: 'succeeded', result}, null, 2), {mode: 0o600});
     return result;
   } finally {

@@ -109,8 +109,8 @@ This directory maintains Firebase SQL Connect (`restaurant`), backed by Cloud SQ
   per topic or trigger. Do not use `setGlobalOptions` for topic-specific settings.
   Bound database pools and instance counts together against the Cloud SQL connection
   budget; each function scales separately even within one codebase. Dev has 25
-  connections (three reserved): all eight current triggers use maxInstances 1,
-  concurrency 2 and pool max 2, totaling at most sixteen pooled connections. Staff's role
+  connections (three reserved): all nine current triggers use maxInstances 1,
+  concurrency 2 and pool max 2, totaling at most eighteen pooled connections. Staff's role
   control lock is specific to role changes, not a lock for unrelated topics.
 - Authorize callable requests before initializing external dependencies. Enforce
   permissions on the server, validate inputs, preserve known `HttpsError`s, and
@@ -291,6 +291,15 @@ This directory maintains Firebase SQL Connect (`restaurant`), backed by Cloud SQ
   these guards/private table in future schema maintenance. Deploy compatible
   updateStaffOrder before the app; no deployment/live financial writes implied.
 
+
+## Historical orders
+
+- Follow `docs/historical-order-import.md`. Keep `importHistoricalOrder` separate
+  from live order creation. Require Google Admin and a reviewed past pickup.
+- Use the current catalog subtotal and reviewed historical cash receipts. Save
+  Paid and Completed at pickup and leave production allocations empty.
+- Preserve actor-bound retries, append-only audit timestamps, and the import-only
+  reopen guard. Apply the guard before deploying the callable.
 
 ## Admin Report
 

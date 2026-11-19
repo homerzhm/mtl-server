@@ -24,6 +24,7 @@ test('fresh migration setup has no business seeds and only required schedule',as
   assert.deepEqual((await client.query('SELECT id,block_minutes FROM booking_settings')).rows,[{id:'default',block_minutes:[660,780,930,1080]}]);
   for(const t of ['staff_account','staff_role_change','staff_role_control']) assert.equal((await client.query(`SELECT count(*)::int n FROM ${t}`)).rows[0].n,0);
   assert.equal((await client.query(await readFile(join(root,'migrations/verify-mark-paid-with-balance.sql'),'utf8'))).rows[0].ok,true);
+  assert.equal((await client.query(await readFile(join(root,'migrations/verify-historical-order-import.sql'),'utf8'))).rows[0].ok,true);
   await verifyContract(client,manifest);await verifyPermissions(client,parameters);await assertPrivateLedger(client,parameters);
 });
 test('special-day schema maintenance creates SQL before registration and resumes an interrupted release',async()=>{

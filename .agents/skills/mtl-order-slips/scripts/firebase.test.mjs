@@ -32,6 +32,53 @@ test('order callable uses data envelope and catches errors even with HTTP 200', 
   }), /GROUP_CAPACITY/);
   await assert.rejects(request(s, 'mutation', 'CreateOrder', {}, () => {throw new Error('Must not fetch');}), /Only CreateClient/);
 });
+test('historical imports require an Admin session and use their own approved journal', async () => {
+  const dir = await mkdtemp(join(tmpdir(), 'mtl-historical-skill-test-'));
+  const oldFile = process.env.MTL_FIREBASE_SESSION_FILE, oldFetch = globalThis.fetch;
+  try {
+    const sessionFile = join(dir, 'session.json'), inputFile = join(dir, 'request.json'), journalPath = join(dir, 'journal.json');
+    async function setAdmin(admin) {
+      const token = `e30.${Buffer.from(JSON.stringify({...actor, admin})).toString('base64url')}.FAKE`;
+      await writeFile(sessionFile, JSON.stringify({projectId: actor.aud, apiKey: s.apiKey, idToken: token}), {mode: 0o600});
+    }
+    process.env.MTL_FIREBASE_SESSION_FILE = sessionFile;
+    const variables = {id: '5e8db614-b785-4d85-a1fc-6a1df5871c1f', payments: [{amountCents: 10000}, {amountCents: 20000}]};
+    const input = {environment: 'dev', kind: 'callable', operation: 'importHistoricalOrder', approved: true, journalPath, variables};
+    let calls = 0;
+    globalThis.fetch = async (url, options) => {
+      calls++;
+      assert.equal(url, 'https://northamerica-northeast1-mtl-service-e3e0c.cloudfunctions.net/importHistoricalOrder');
+      assert.deepEqual(JSON.parse(options.body), {data: variables});
+      return {ok: true, json: async () => ({result: {id: calls === 1 ? 'unexpected' : variables.id}})};
+    };
+    await writeFile(inputFile, JSON.stringify(input));
+    await setAdmin('true');
+    await assert.rejects(main(inputFile), /Admin session/);
+    await setAdmin(true);
+    await writeFile(inputFile, JSON.stringify({...input, approved: false}));
+    await assert.rejects(main(inputFile), /user-approved/);
+    assert.equal(calls, 0);
+    await writeFile(inputFile, JSON.stringify(input));
+    await assert.rejects(main(inputFile), /unexpected ID/);
+    assert.equal(JSON.parse(await readFile(journalPath)).state, 'uncertain');
+    await assert.rejects(main(inputFile), /explicit retry approval/);
+    await writeFile(inputFile, JSON.stringify({...input, retryAuthorized: true}));
+    assert.deepEqual(await main(inputFile), {id: variables.id});
+    assert.deepEqual(await main(inputFile), {id: variables.id});
+    assert.equal(calls, 2);
+    const rejectedPath = join(dir, 'rejected.json');
+    await writeFile(inputFile, JSON.stringify({...input, journalPath: rejectedPath}));
+    globalThis.fetch = async () => ({ok: false, status: 400, json: async () =>
+      ({error: {status: 'FAILED_PRECONDITION', message: 'CATALOG_CHANGED'}})});
+    await assert.rejects(main(inputFile), /CATALOG_CHANGED/);
+    assert.equal(JSON.parse(await readFile(rejectedPath)).state, 'rejected');
+  } finally {
+    globalThis.fetch = oldFetch;
+    if (oldFile === undefined) delete process.env.MTL_FIREBASE_SESSION_FILE; else process.env.MTL_FIREBASE_SESSION_FILE = oldFile;
+    await rm(dir, {recursive: true, force: true});
+  }
+});
+
 test('journals uncertain writes, requires explicit retry, preserves actor and payload, and caches success', async () => {
   const dir = await mkdtemp(join(tmpdir(), 'mtl-skill-test-'));
   const oldFile = process.env.MTL_FIREBASE_SESSION_FILE, oldFetch = globalThis.fetch;

@@ -85,7 +85,7 @@ Connector service `restaurant`, connector `staff-admin`. Queries return named Gr
 | ListOrderCapacityAllocations | id, offset | Saved group blocks and quantities |
 | ListOrderAuditEvents | id, offset | Audit verification/reconciliation |
 
-Callable `getBookingAvailability({day, offset})` returns settings, blocks with group revisions and decimal-string capacity counts, and nextOffset. Callable `createStaffOrder(payload)` returns `{id}` and must remain the only order-creation write. Both require a verified Firebase Google Staff/Admin user. Do not invoke `updateStaffOrder` to silently correct mismatched slips.
+Callable `getBookingAvailability({day, offset})` returns settings, blocks with group revisions and decimal-string capacity counts, and nextOffset. Callable `createStaffOrder(payload)` returns `{id}` for a future booking. Both require a verified Firebase Google Staff/Admin user. Historical mode uses the separate Admin-only `importHistoricalOrder` callable and the [historical workflow](historical.md). Do not invoke `updateStaffOrder` to silently correct mismatched slips.
 
 ## Protocol references
 

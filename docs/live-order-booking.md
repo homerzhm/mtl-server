@@ -29,6 +29,8 @@ aggregate counts remain Int64. Allocations are immutable history.
 
 ## Creation contract
 
+Use [historical order import](historical-order-import.md) for completed pickups from older records.
+
 `createStaffOrder` remains a flat callable in northamerica-northeast1, requiring
 Google sign-in and Boolean Staff OR Admin. Authorize before constructing dependencies.
 Fields below are required except `depositReceivedCents`; optional form values use explicit null:

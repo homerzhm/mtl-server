@@ -6,7 +6,7 @@ import {parseArgs} from 'node:util';
 
 export const root = fileURLToPath(new URL('../../', import.meta.url));
 export const region = 'northamerica-northeast1';
-export const functions = ['registerStaffSignIn','setStaffRoles','reconcileStaffRoles','createStaffOrder','updateStaffOrder','manageBookingConfiguration','getBookingAvailability','manageReportEntries'];
+export const functions = ['registerStaffSignIn','setStaffRoles','reconcileStaffRoles','createStaffOrder','updateStaffOrder','manageBookingConfiguration','getBookingAvailability','manageReportEntries','importHistoricalOrder'];
 export const checkNames = ['release-unit','release-integration','schema','functions-unit','emulators'];
 export const digest = value => createHash('sha256').update(value).digest('hex');
 export const stableJson = value => JSON.stringify(value, (_key,item) => item && typeof item === 'object' && !Array.isArray(item) ? Object.fromEntries(Object.entries(item).sort(([a],[b])=>a.localeCompare(b))) : item);

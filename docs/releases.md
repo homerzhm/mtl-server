@@ -218,7 +218,7 @@ Do this only after an explicit cloud setup/deployment request.
    Set the actual mapping in `release/environments.json` before the first commit
    accepted in dev. Match PostgreSQL version/flags deliberately; production sizing
    and high availability may exceed dev. Retain three reserved connections plus
-   room for sixteen pooled runtime connections and operator sessions.
+   room for eighteen pooled runtime connections and operator sessions.
 2. Configure billing, budget alerts, required APIs (SQL Connect, Cloud SQL Admin,
    Auth/Identity Toolkit, Functions/Run, Build, Artifact Registry and Scheduler),
    monitoring/alerts, backups/PITR, recovery retention and a restore drill. Inspect
@@ -244,8 +244,9 @@ Do this only after an explicit cloud setup/deployment request.
    `order-integrity`, `order-paid-status`, `order-capacity-booking`, `order-actions`,
    `payment-edits`, `order-edits`, then `restore-item-capacity-reference`. Apply grants and verify effective private access.
    Apply the Report constraints after the schema has created its ledger tables.
+   Apply and verify the historical-order import guard before deploying the callable.
    Do not reuse this fresh-database schema procedure on populated dev.
-7. Deploy the matching connector and all eight Functions to initialize the cloud
+7. Deploy the matching connector and all nine Functions to initialize the cloud
    resources. Confirm scheduler readiness. Bootstrap an explicit production Google
    UID using the trusted Staff setup command with production operator parameters;
    it uses shell parameters, not automatic dotenv loading. Preserve genuine admin

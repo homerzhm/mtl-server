@@ -2623,6 +2623,12 @@
     },
     {
       "table_name": "customer_order",
+      "name": "historical_order_reopen_guard",
+      "tgenabled": "O",
+      "definition": "CREATE TRIGGER historical_order_reopen_guard BEFORE UPDATE OF status ON public.customer_order FOR EACH ROW WHEN (((old.status = 'COMPLETED'::text) AND (old.status IS DISTINCT FROM new.status))) EXECUTE FUNCTION guard_historical_order_reopen()"
+    },
+    {
+      "table_name": "customer_order",
       "name": "managed_booking_guard",
       "tgenabled": "O",
       "definition": "CREATE TRIGGER managed_booking_guard BEFORE UPDATE ON public.customer_order FOR EACH ROW EXECUTE FUNCTION protect_managed_booking()"
@@ -2790,6 +2796,15 @@
         "search_path=pg_catalog, public, pg_temp"
       ],
       "definition": "CREATE OR REPLACE FUNCTION public.guard_capacity_group()\n RETURNS trigger\n LANGUAGE plpgsql\n SET search_path TO 'pg_catalog', 'public', 'pg_temp'\nAS $function$\nBEGIN\n  IF TG_OP='DELETE' THEN RAISE EXCEPTION 'ARCHIVE_GROUP_INSTEAD'; END IF;\n  IF NEW.capacity_per_block<1 OR NEW.revision<0 OR NEW.code !~ '^[A-Z][A-Z0-9_]{0,63}$'\n    OR btrim(NEW.name)='' OR NEW.name<>btrim(NEW.name) OR length(NEW.name)>200 THEN RAISE EXCEPTION 'BOOKING_CONFIGURATION_INVALID'; END IF;\n  IF TG_OP='UPDATE' THEN\n    IF NEW.id<>OLD.id OR NEW.code<>OLD.code OR NEW.created_at<>OLD.created_at OR NEW.revision<>OLD.revision+1 THEN RAISE EXCEPTION 'BOOKING_CONFIGURATION_CONFLICT'; END IF;\n    IF NEW.archived AND EXISTS(SELECT 1 FROM product WHERE capacity_group_id=NEW.id) THEN RAISE EXCEPTION 'GROUP_HAS_PRODUCTS'; END IF;\n    IF NEW.capacity_per_block<OLD.capacity_per_block AND EXISTS(SELECT 1 FROM order_capacity_allocation a JOIN customer_order o ON o.id=a.order_id\n      WHERE a.group_id=NEW.id AND o.status<>'CANCELLED'\n        AND a.pickup_day>=(clock_timestamp() AT TIME ZONE 'America/Toronto')::date\n        AND public.special_day_capacity(NEW.id,a.pickup_day) IS NULL\n      GROUP BY a.pickup_day,a.block_minute HAVING sum(a.quantity)>NEW.capacity_per_block) THEN RAISE EXCEPTION 'GROUP_CAPACITY_IN_USE'; END IF;\n  END IF;\n  RETURN NEW;\nEND $function$\n"
+    },
+    {
+      "name": "guard_historical_order_reopen",
+      "args": "",
+      "security_definer": true,
+      "config": [
+        "search_path=pg_catalog, pg_temp"
+      ],
+      "definition": "CREATE OR REPLACE FUNCTION public.guard_historical_order_reopen()\n RETURNS trigger\n LANGUAGE plpgsql\n SECURITY DEFINER\n SET search_path TO 'pg_catalog', 'pg_temp'\nAS $function$\nBEGIN\n  IF EXISTS (\n    SELECT 1 FROM public.order_audit_event\n    WHERE order_id = OLD.id AND order_revision = 0 AND action = 'ORDER_CREATED'\n      AND changes ? 'historicalImport'\n  ) THEN\n    RAISE EXCEPTION 'HISTORICAL_ORDER_CLOSED' USING ERRCODE = '23514';\n  END IF;\n  RETURN NEW;\nEND $function$\n"
     },
     {
       "name": "guard_native_order_status",

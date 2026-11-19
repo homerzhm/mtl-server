@@ -82,6 +82,12 @@
       "file": "migrations/report-constraints.sql",
       "mode": "transaction",
       "verify": "migrations/verify-report-constraints.sql"
+    },
+    {
+      "id": "013-historical-order-import",
+      "file": "migrations/historical-order-import.sql",
+      "mode": "transaction",
+      "verify": "migrations/verify-historical-order-import.sql"
     }
   ],
   "checks": [

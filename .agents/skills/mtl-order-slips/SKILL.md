@@ -5,6 +5,8 @@ description: Process single or batches of MTL handwritten order-slip images, sho
 
 # MTL order slips
 
+Use the future booking workflow by default. For an explicit request to import completed orders, use [Historical mode](references/historical.md). Select one mode and environment per reviewed batch.
+
 ## Select the environment first
 
 Before cloud access, establish **Dev or Production** from the user's current instructions. If unspecified, ask; do not inherit the CLI's active project or select Production from an image or old example. Announce the environment and project in the preview and result. Keep the selection for the current batch; a new task without an explicit environment must ask again. Initial testing is in **Dev**, at the user's request.

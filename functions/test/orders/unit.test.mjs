@@ -3,6 +3,7 @@ import assert from 'node:assert/strict';
 import {randomUUID} from 'node:crypto';
 import {validateInput,validateTiming,localParts} from '../../lib/orders/booking.js';
 import {requireOrderCaller} from '../../lib/orders/service.js';
+import {parseHistoricalOrder} from '../../lib/orders/historical-import.js';
 const lechon=randomUUID();
 const input=()=>({id:randomUUID(),items:[{id:randomUUID(),productId:randomUUID(),expectedRevision:0,quantity:1}],clientId:null,contactPhoneNumber:null,scheduledFor:'2030-06-01T18:00:00.000Z',expectedSettingsRevision:0,expectedGroups:[{id:lechon,expectedRevision:0}],allocations:[{groupId:lechon,blockMinute:780,quantity:1}],depositRequiredCents:0,notes:null});
 test('requires Google and independent Boolean staff/admin claims',()=>{
@@ -103,4 +104,23 @@ test('cancellation requires explicit refund and retains old canonical action sha
   for(const patch of [{refundAmountCents:undefined},{refundAmountCents:-1},{refundAmountCents:0.1},{reason:'x'.repeat(1001)}])
     assert.throws(()=>validateAction({...cancel,...patch}),{code:'invalid-argument'});
   assert.throws(()=>validateAction({...old,refundAmountCents:0}),{code:'invalid-argument'});
+});
+
+test('historical payload canonicalizes identity and times and rejects invalid money and live booking fields', () => {
+  const scheduledFor = '2025-11-01T16:37:04Z';
+  const v = {id: randomUUID().toUpperCase(), items: input().items, scheduledFor,
+    contactPhoneNumber: '4165550191', payments: [{amountCents: 10000}, {amountCents: 20000}]};
+  const parsed = parseHistoricalOrder(v);
+  assert.equal(parsed.id, v.id.toLowerCase());
+  assert.equal(parsed.contactPhoneNumber, '+14165550191');
+  assert.equal(parsed.createdAt, '2025-11-01T16:37:04.000Z');
+  assert.deepEqual(parsed.payments, v.payments.map(payment => ({...payment, receivedAt: parsed.scheduledFor})));
+  assert.deepEqual(parseHistoricalOrder({...v, payments: []}).payments, []);
+  for (const patch of [{scheduledFor: '2025-02-30T16:00:00Z'}, {scheduledFor: '0000-01-01T00:00:00Z'},
+    {createdAt: '2025-11-02T16:00:00Z'}, {payments: null}, {payments: [{amountCents: 0}]},
+    {payments: [{amountCents: 2147483648}]}, {payments: [{amountCents: 1.1}]},
+    {payments: [{amountCents: 100, receivedAt: '2025-11-02T16:00:00Z'}]}, {allocations: []},
+    {items: [v.items[0], {...v.items[0], id: randomUUID()}]}]) {
+    assert.throws(() => parseHistoricalOrder({...v, ...patch}), {code: 'invalid-argument'});
+  }
 });
