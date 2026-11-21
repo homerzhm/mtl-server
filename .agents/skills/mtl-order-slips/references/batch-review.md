@@ -15,6 +15,8 @@ Each entry needs its own image on the left and its extracted-data/confidence tab
 
 Use native in-chat paired images and tables if the surface supports that layout. Also generate a local, self-contained HTML review using `scripts/render-batch-review.mjs` when needed for reliable two-column presentation or a larger batch. It embeds local PNG/JPEG/WebP/GIF previews and needs no hosting or uploads. Convert HEIC originals to temporary PNG previews first; preserve filename/hash associations. Open the review locally when browser tools are available, or provide its clickable absolute file link. Use an output directory outside the repo for personal data and image previews. Verify every entry appears and each source image is paired with the correct data before presenting it. On narrow screens the two columns may stack; the pairing remains clear.
 
+For each affected entry, put the cut extra callout above its extraction table. In the HTML display manifest, use `cutExtraRoastBlocks` with one text line per affected lechon item and block. Omit the field for entries where the rule does not apply.
+
 The helper's JSON input is a **display manifest**, not an approved API payload:
 
 ```json
@@ -28,7 +30,8 @@ The helper's JSON input is a **display manifest**, not an approved API payload:
       {"field":"Phone", "value":"+1 647-627-4814", "confidence":"High", "source":"Read from image; normalized", "evidence":"Digits clearly legible"},
       {"field":"Pickup year", "value":"2026", "confidence":null, "source":"Inferred by rule", "evidence":"Year absent; next future occurrence; weekday agrees"}
     ],
-    "checks":["No existing same-pickup order found", "Catalog: 1 × 70LB at CAD $320", "Lechon allocation: 11:00; pickup: 12:30 Toronto"],
+    "cutExtraRoastBlocks":["1 × 70 LB lechon moves from 3:30 p.m. to 1:00 p.m. for a 4:00 p.m. Toronto pickup. The roast block must be at or before 3:00 p.m."],
+    "checks":["No existing same-pickup order found", "Catalog: 1 × 70LB at CAD $320"],
     "actions":["Create client with blank name/email", "Create Confirmed order with CAD $100 already received cash; CAD $220 balance"],
     "questions":[]
   }]

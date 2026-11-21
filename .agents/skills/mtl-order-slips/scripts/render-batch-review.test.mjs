@@ -16,10 +16,15 @@ test('pairs all ten images with their own fields and puts confirmation after the
       await writeFile(imagePath,Buffer.from('iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAusB9Wl6iQAAAABJRU5ErkJggg==','base64'));
       entries.push({id:String(i).padStart(2,'0'),filename:`image-${i}.HEIC`,imagePath,status:'ready',fields:[{...field,value:`year-for-${i}`}]});
     }
+    entries[1].cutExtraRoastBlocks = ['70 LB lechon & cut extra moves from 3:30 p.m. to 1:00 p.m.'];
     const html=await renderBatchReview(manifest(entries));
     const cards=html.match(/<article>.*?<\/article>/gs);
     assert.equal(cards.length,10);
     cards.forEach((card,i)=>{assert.ok(card.includes(`image-${i+1}.HEIC`));assert.ok(card.includes(`year-for-${i+1}`));assert.ok(card.includes('data:image/png;base64,'));});
+    assert.equal(cards.filter(card => card.includes('<h3>Cut extra roast block</h3>')).length, 1);
+    const callout = cards[1].indexOf('<section class="roast-block-callout">');
+    assert.ok(callout >= 0 && callout < cards[1].indexOf('<table>'));
+    assert.ok(cards[1].includes('70 LB lechon &amp; cut extra moves from 3:30 p.m. to 1:00 p.m.'));
     assert.ok(html.indexOf('Final batch confirmation')>html.lastIndexOf('</article>'));
     assert.ok(!html.includes('<script'));
     assert.match(html,/grid-template-columns:minmax/);

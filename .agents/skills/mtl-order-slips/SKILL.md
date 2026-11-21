@@ -46,7 +46,12 @@ Extract phone, client name if legible, pickup date, written weekday, pickup time
 
 Page the live catalog and resolve each label to an active sellable item with its current price, revision, and capacity group. Use exact size/name plus price as evidence. Show alternatives and ask if the match is not clear. Current catalog subtotal must agree with the slip total; the creation callable does not accept custom prices or discounts. Stop for review on a mismatch rather than approximating it or adding financial corrections.
 
-Call `getBookingAvailability` for the Toronto pickup day and exhaust `nextOffset`. Use returned settings/group revisions. For each required capacity group, select the **latest configured block at or before pickup** that is still future on that day. Use that block if it has enough remaining places; **if it is full, ask**, rather than moving to another block automatically. A pickup of 12:30 may allocate to 11:00 when those are the live settings. Blocks and pickup are distinct. Sum ordered quantities per group: one product quantity consumes one place. Ungrouped products have no allocation. Do not alter capacity settings or seed groups. Use BigInt for string occupancy counts.
+Call `getBookingAvailability` for the Toronto pickup day and exhaust `nextOffset`. Use returned settings/group revisions. For each quantity of a grouped product, select the **latest configured future block on that day** at or before its cutoff:
+
+- The usual cutoff is the pickup time. A 12:30 p.m. pickup may use the 11:00 a.m. block.
+- For lechon with a **cut extra**, the cutoff for that lechon's roast block is **one hour before pickup**, inclusive. For a 4:00 p.m. pickup, the cutoff is 3:00 p.m. With 1:00 p.m. and 3:30 p.m. roast blocks, use 1:00 p.m. If the slip is unclear about which lechon the cut extra applies to and that affects the allocation, ask before proposing a block.
+
+Sum quantities by capacity group and selected block. One product quantity consumes one place, and a group can have allocations in multiple blocks. If no block meets a cutoff or a selected block lacks enough remaining places for the combined quantity, ask for review before booking. Ungrouped products have no allocation. Do not alter capacity settings or seed groups. Use BigInt for string occupancy counts.
 
 Preview before any client/order write, even in Dev:
 
@@ -56,6 +61,7 @@ Preview before any client/order write, even in Dev:
 - Pickup with year, weekday, Toronto time and UTC instant; identify any inferred year.
 - Product names/quantities, current CAD prices, subtotal, already received cash and remaining balance.
 - Proposed capacity block and group per allocation, separate from pickup time.
+- Whenever the one-hour rule applies, put a bold **Cut extra roast block** callout near the top of the affected order's preview, above the extraction table. Name the affected lechon and quantity, and show the proposed roast block, pickup time and one-hour cutoff. If the rule moved the block earlier, show the usual block and the proposed block. If scheduling needs review, show why in the callout. Example: **Cut extra roast block** · 1 × 70 LB lechon moves from 3:30 p.m. to **1:00 p.m.** for a 4:00 p.m. pickup. The roast block must be at or before 3:00 p.m.
 - Proposed actions and unresolved questions. A new deposit-bearing order remains CONFIRMED, even if fully covered; Paid/pickup are separate app actions.
 
 Include a field-by-field extraction table with **Field | Proposed value | Confidence | Evidence / uncertainty**. Cover phone, client name, pickup date/year/time, each item and quantity, total, received amount/payment method, balance, and any extracted notes. Use qualitative confidence, not invented numerical probabilities:
