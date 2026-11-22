@@ -302,7 +302,7 @@ The dev release is recorded below. Future deployments require an explicit reques
   requestId: string; // stable UUID for this action; also the payment UUID for PAYMENT
   id: string; // order UUID
   expectedRevision: number;
-  action: 'PAYMENT' | 'PAID' | 'PICKUP';
+  action: 'PAYMENT' | 'PAID' | 'PICKUP' | 'REOPEN';
   amountCents?: number | null; // only PAYMENT: positive exact signed Int32 cents
 }
 ```
@@ -313,6 +313,13 @@ cash has been received. It preserves an agreed final total or finalizes subtotal
 less discount, and creates no receipt. PICKUP requires Paid and changes it to
 Completed with server time. Paid locks new receipts, and the balance stays visible
 through pickup.
+
+REOPEN requires Google sign-in and the Boolean Admin claim. It moves a Completed
+order to Confirmed, clears its completion timestamp, and records the prior pickup
+in an `ORDER_REOPENED` audit event. Receipts, refunds, totals, pickup schedule, and
+allocations are preserved. Historical imports and legacy grouped orders without
+managed allocations are blocked by the existing database guards. The action uses
+the existing schema and runtime grants.
 
 Every action locks the parent order, validates its revision, and saves the write,
 audit and private OrderActionRequest identity/hash in one transaction. Request

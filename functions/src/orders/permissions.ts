@@ -8,3 +8,10 @@ export function requireOrderCaller(caller:OrderCaller|undefined):OrderCaller {
     throw new HttpsError('permission-denied','Staff access required');
   return caller;
 }
+
+export function requireOrderActionCaller(caller:OrderCaller|undefined, raw:unknown):OrderCaller {
+  const actor=requireOrderCaller(caller);
+  if((raw as {action?:unknown}|null)?.action==='REOPEN' && actor.token.admin!==true)
+    throw new HttpsError('permission-denied','Admin access required');
+  return actor;
+}

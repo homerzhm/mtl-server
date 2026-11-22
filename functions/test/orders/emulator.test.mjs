@@ -261,6 +261,65 @@ test('cash overpayment, finalization and pickup are audited, atomic and retry sa
   assert.equal((await query('GetOrder',{id})).order.status,'COMPLETED');
   assert.equal(Number((await query('GetOrder',{id})).financials[0].balanceCents),-50);
 });
+test('admins reopen atomically with the ledger, agreed total and allocations intact',async()=>{
+  const v=input();
+  v.scheduledFor='2030-06-02T18:00:00.000Z';
+  v.expectedSettingsRevision=(await pool.query("SELECT revision FROM booking_settings WHERE id='default'")).rows[0].revision;
+  await service.create(actor,v);
+  const id=v.id;
+  const receipt=action(id,0,'PAYMENT',150);
+  await actions.perform(actor,receipt);
+  await actions.perform(actor,action(id,1,'PAID'));
+  await actions.perform(actor,action(id,2,'PICKUP'));
+  await pool.query("INSERT INTO refund(id,payment_id,amount_cents,status,created_at) VALUES($1,$2,20,'SUCCEEDED',now())",
+    [randomUUID(),receipt.requestId]);
+  const initial=(await pool.query('SELECT * FROM customer_order WHERE id=$1',[id])).rows[0];
+  const ledger=async()=>Promise.all([
+    pool.query('SELECT * FROM payment WHERE order_id=$1',[id]),
+    pool.query('SELECT * FROM refund WHERE payment_id=$1',[receipt.requestId]),
+    pool.query('SELECT * FROM order_capacity_allocation WHERE order_id=$1',[id]),
+    pool.query('SELECT * FROM order_item WHERE order_id=$1',[id]),
+  ]).then(results=>results.map(result=>result.rows));
+  const original=await ledger();
+  const adminOnly={uid:'reopen-admin',token:{admin:true,firebase:{sign_in_provider:'google.com'}}};
+  const reopen=action(id,3,'REOPEN');
+  await assert.rejects(actions.perform(actor,reopen),{code:'permission-denied'});
+  await assert.rejects(actions.perform({...actor,token:{...actor.token,admin:'true'}},reopen),{code:'permission-denied'});
+  await assert.rejects(actions.perform(adminOnly,{...reopen,expectedRevision:2}),/ORDER_CONFLICT/);
+  assert.deepEqual(await Promise.all([actions.perform(adminOnly,reopen),actions.perform(adminOnly,reopen)]),[{id},{id}]);
+  await assert.rejects(actions.perform(actor,reopen),{code:'permission-denied'});
+  await assert.rejects(actions.perform(adminOnly,action(id,4,'REOPEN')),/ORDER_LOCKED/);
+  const reopened=(await pool.query('SELECT * FROM customer_order WHERE id=$1',[id])).rows[0];
+  assert.deepEqual({...reopened,updated_at:initial.updated_at},
+    {...initial,status:'CONFIRMED',completed_at:null,revision:4});
+  assert.deepEqual(await ledger(),original);
+  const events=(await pool.query("SELECT actor_uid,changes FROM order_audit_event WHERE order_id=$1 AND action='ORDER_REOPENED'",[id])).rows;
+  assert.equal(events.length,1);
+  assert.equal(events[0].actor_uid,adminOnly.uid);
+  assert.equal(events[0].changes.before.completedAt,initial.completed_at.toISOString());
+  assert.equal(events[0].changes.after.completedAt,null);
+  await actions.perform(actor,action(id,4,'PAYMENT',25));
+  await actions.perform(actor,action(id,5,'PAID'));
+  await actions.perform(actor,action(id,6,'PICKUP'));
+  assert.deepEqual(await actions.perform(adminOnly,reopen),{id});
+  const completed=await query('GetOrder',{id});
+  assert.equal(completed.order.status,'COMPLETED');
+  assert.equal(Number(completed.financials[0].balanceCents),-55);
+});
+
+test('reopen respects the legacy roast allocation guard',async()=>{
+  const id=randomUUID();
+  await pool.query(`INSERT INTO customer_order(id,order_number,subtotal_cents,item_count,status,completed_at,created_at,updated_at)
+    VALUES($1,'RW4EGY',100,1,'COMPLETED',now(),now(),now())`,[id]);
+  const item=randomUUID();
+  await pool.query(`INSERT INTO order_item(id,order_id,product_id,product_name,catalog_unit_price_cents,unit_price_cents,quantity,created_at)
+    VALUES($1,$2,$3,'Legacy pig',100,100,1,now())`,[item,id,product]);
+  const request=action(id,0,'REOPEN');
+  await assert.rejects(actions.perform(admin,request),{code:'failed-precondition',message:'ALLOCATION_AWARE_REOPEN_REQUIRED'});
+  assert.deepEqual((await pool.query('SELECT status,revision FROM customer_order WHERE id=$1',[id])).rows[0],
+    {status:'COMPLETED',revision:0});
+  assert.equal((await pool.query('SELECT id FROM order_action_request WHERE id=$1',[request.requestId])).rowCount,0);
+});
 test('Paid with a balance preserves the agreed total, ledger and pickup eligibility',async()=>{
   const id=await actionOrder();
   await pool.query('UPDATE customer_order SET discount_cents=20,final_total_cents=90 WHERE id=$1',[id]);
@@ -337,6 +396,11 @@ test('order action callable rejects anonymous callers and enforces actual restri
   const paidBody=await paidResponse.json();
   assert.equal(paidBody.result?.id,balanceDueID,JSON.stringify(paidBody));
   assert.equal(Number((await query('GetOrder',{id:balanceDueID})).financials[0].balanceCents),100);
+  await actions.perform(actor,action(balanceDueID,1,'PICKUP'));
+  const reopen=action(balanceDueID,2,'REOPEN');
+  const reopenResponse=await fetch(endpoint,{method:'POST',headers:{'Content-Type':'application/json',Authorization:`Bearer ${token}`},
+    body:JSON.stringify({data:reopen})});
+  assert.equal((await reopenResponse.json()).error.status,'PERMISSION_DENIED');
   const native=input();native.scheduledFor='2030-07-01T18:00:00.000Z';await service.create(actor,native);const id=native.id;
   await pool.query(`CREATE ROLE action_runtime LOGIN PASSWORD 'test-only';
     GRANT USAGE ON SCHEMA public TO action_runtime;
@@ -354,6 +418,7 @@ test('order action callable rejects anonymous callers and enforces actual restri
     await service.perform(actor,action(id,3,'PAYMENT',10));
     await service.perform(actor,action(id,4,'PAID'));
     await service.perform(actor,action(id,5,'PICKUP'));
+    assert.deepEqual(await service.perform(admin,action(id,6,'REOPEN')),{id});
     for(const token of [{staff:'true'}, {staff:true,firebase:{sign_in_provider:'password'}},{}])
       await assert.rejects(service.perform({uid:'bad',token},action(id,3,'PAYMENT',10)),{code:'permission-denied'});
   } finally {await restricted.end();}
@@ -950,6 +1015,9 @@ test('historical import preserves receipts, audit dates and balance using restri
       /HISTORICAL_ORDER_CLOSED/);
     const reopen = await executeConnector('Mutation', 'ReopenOrder', {id: v.id, expectedRevision: order.revision}, {admin: true});
     assert.match(JSON.stringify(await reopen.json()), /ORDER_CONFLICT/);
+    const reopenAction=action(v.id,4,'REOPEN');
+    await assert.rejects(actions.perform(historicalAdmin,reopenAction),{code:'failed-precondition',message:'HISTORICAL_ORDER_CLOSED'});
+    assert.equal((await pool.query('SELECT id FROM order_action_request WHERE id=$1',[reopenAction.requestId])).rowCount,0);
     const {rows: [{id: paymentId}]} = await pool.query('SELECT id FROM payment WHERE order_id=$1 AND amount_cents=10000', [v.id]);
     await actions.perform(historicalAdmin, {...action(v.id, 4, 'PAYMENT_EDIT', 9000), paymentId});
     const corrected = await query('GetOrder', {id: v.id});

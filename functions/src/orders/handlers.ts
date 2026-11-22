@@ -4,6 +4,7 @@ import {onCall,HttpsError} from 'firebase-functions/v2/https';
 import {defineString} from 'firebase-functions/params';
 import {logger} from 'firebase-functions';
 import {getPool} from './database';
+import {requireOrderActionCaller} from './permissions';
 import {OrderCreationService,requireOrderCaller} from './service';
 const runtimeServiceAccount=defineString('ORDERS_RUNTIME_SERVICE_ACCOUNT');
 const runtimeRegion=defineString('ORDERS_REGION',{default:'northamerica-northeast1'});
@@ -14,7 +15,7 @@ export const createStaffOrder=onCall({region:runtimeRegion,timeoutSeconds:60,max
 });
 
 export const updateStaffOrder=onCall({region:runtimeRegion,timeoutSeconds:60,maxInstances:1,concurrency:2,serviceAccount:runtimeServiceAccount},async request=>{
-  const caller=requireOrderCaller(request.auth);
+  const caller=requireOrderActionCaller(request.auth,request.data);
   try {return await new OrderActionService(await getPool()).perform(caller,request.data);}
   catch(error){if(error instanceof HttpsError)throw error;logger.error('Order action failed',error);throw new HttpsError('internal','Order result uncertain; retry the same request');}
 });

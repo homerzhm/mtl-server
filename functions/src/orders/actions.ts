@@ -3,10 +3,10 @@ import {HttpsError} from 'firebase-functions/v2/https';
 import type {Pool} from 'pg';
 import {OrderEditService} from './edits';
 import {lockCapacity} from './capacity';
-import {requireOrderCaller, type OrderCaller} from './permissions';
+import {requireOrderActionCaller, type OrderCaller} from './permissions';
 
 export type OrderAction = {requestId: string; id: string; expectedRevision: number;
-  action: 'PAYMENT' | 'PAID' | 'PICKUP' | 'PAYMENT_EDIT' | 'CANCEL'; amountCents: number | null; paymentId?: string; refundAmountCents?: number; reason?: string | null};
+  action: 'PAYMENT' | 'PAID' | 'PICKUP' | 'PAYMENT_EDIT' | 'CANCEL' | 'REOPEN'; amountCents: number | null; paymentId?: string; refundAmountCents?: number; reason?: string | null};
 const uuid = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 export function validateAction(raw: unknown): OrderAction {
   const v = raw as Record<string, unknown> | null;
@@ -15,7 +15,7 @@ export function validateAction(raw: unknown): OrderAction {
       Object.keys(v).some(k => !['requestId','id','expectedRevision','action','amountCents','paymentId','refundAmountCents','reason'].includes(k)) ||
       typeof v.requestId !== 'string' || !uuid.test(v.requestId) || typeof v.id !== 'string' || !uuid.test(v.id) ||
       !Number.isInteger(v.expectedRevision) || Number(v.expectedRevision) < 0 || Number(v.expectedRevision) >= 2147483647 ||
-      typeof v.action !== 'string' || !['PAYMENT','PAID','PICKUP','PAYMENT_EDIT','CANCEL'].includes(v.action)) throw invalid();
+      typeof v.action !== 'string' || !['PAYMENT','PAID','PICKUP','PAYMENT_EDIT','CANCEL','REOPEN'].includes(v.action)) throw invalid();
   const amount = v.amountCents ?? null;
   if (v.action === 'PAYMENT_EDIT' ? !Number.isInteger(amount) || Number(amount) < 0 || Number(amount) > 2147483647 : v.action === 'PAYMENT' ? !Number.isInteger(amount) || Number(amount) <= 0 || Number(amount) > 2147483647 : amount !== null) throw invalid();
   if (v.action === 'PAYMENT_EDIT' ? typeof v.paymentId !== 'string' || !uuid.test(v.paymentId) : v.paymentId !== undefined) throw invalid();
@@ -32,7 +32,7 @@ export function validateAction(raw: unknown): OrderAction {
 export class OrderActionService {
   constructor(private readonly pool: Pool) {}
   async perform(caller: OrderCaller | undefined, raw: unknown) {
-    const actor = requireOrderCaller(caller);
+    const actor = requireOrderActionCaller(caller, raw);
     if ((raw as {action?: unknown} | null)?.action === 'EDIT') return new OrderEditService(this.pool).edit(actor, raw);
     const input = validateAction(raw);
     const hash = createHash('sha256').update(JSON.stringify(input)).digest('hex');
@@ -102,6 +102,10 @@ export class OrderActionService {
         if (remaining!==0n) throw new HttpsError('failed-precondition','ORDER_REFUND_UNAVAILABLE');
         await db.query(`UPDATE customer_order SET status='CANCELLED',cancelled_at=now(),cancellation_total_cents=$3,revision=$2,updated_at=now() WHERE id=$1`,[input.id,revision,Number(net-refund)]);
         for (const r of refunds) await db.query(`INSERT INTO refund(id,payment_id,amount_cents,status,created_at) VALUES($1,$2,$3,'SUCCEEDED',now())`,[r.id,r.paymentId,r.amountCents]);
+      } else if (input.action === 'REOPEN') {
+        if (order.status !== 'COMPLETED') throw new HttpsError('failed-precondition','ORDER_LOCKED');
+        await db.query(`UPDATE customer_order SET status='CONFIRMED',completed_at=NULL,revision=$2,updated_at=now()
+          WHERE id=$1`,[input.id,revision]);
       } else if (input.action === 'PAYMENT') {
         if (order.status !== 'CONFIRMED') throw new HttpsError('failed-precondition','ORDER_LOCKED');
         // Every ledger writer locks/increments the parent revision before inserting.
@@ -121,13 +125,19 @@ export class OrderActionService {
       const after = (await db.query('SELECT status,final_total_cents,completed_at,cancellation_total_cents,cancelled_at FROM customer_order WHERE id=$1',[input.id])).rows[0];
       await db.query(`INSERT INTO order_audit_event(id,order_id,action,actor_uid,occurred_at,order_revision,changes)
         VALUES($1,$2,$3,$4,now(),$5,$6::jsonb)`,[randomUUID(),input.id,
-        {PAYMENT:'PAYMENT_RECEIVED',PAID:'ORDER_MARKED_PAID',PICKUP:'ORDER_COMPLETED',PAYMENT_EDIT:input.amountCents === 0 ? 'PAYMENT_REMOVED' : 'PAYMENT_CORRECTED',CANCEL:'ORDER_CANCELLED'}[input.action],actor.uid,revision,
+        {PAYMENT:'PAYMENT_RECEIVED',PAID:'ORDER_MARKED_PAID',PICKUP:'ORDER_COMPLETED',PAYMENT_EDIT:input.amountCents === 0 ? 'PAYMENT_REMOVED' : 'PAYMENT_CORRECTED',CANCEL:'ORDER_CANCELLED',REOPEN:'ORDER_REOPENED'}[input.action],actor.uid,revision,
         JSON.stringify({before:{...before,...(input.action === 'PAYMENT_EDIT' ? {payment:beforePayment} : {})},after:{status:after.status,finalTotalCents:after.final_total_cents,
           completedAt:after.completed_at?.toISOString() ?? null,payment,
           ...(input.action === 'CANCEL' ? {cancellationTotalCents:after.cancellation_total_cents,cancelledAt:after.cancelled_at.toISOString(),refunds,reason:input.reason} : {})}})]);
       await db.query('INSERT INTO order_action_request(id,actor_uid,payload_hash) VALUES($1,$2,$3)',[input.requestId,actor.uid,hash]);
       await db.query('COMMIT'); return {id:input.id};
-    } catch (error) { await db.query('ROLLBACK').catch(()=>{}); throw error; }
+    } catch (error) {
+      await db.query('ROLLBACK').catch(()=>{});
+      if (input.action === 'REOPEN' && error instanceof Error &&
+          (error.message === 'HISTORICAL_ORDER_CLOSED' || error.message === 'ALLOCATION_AWARE_REOPEN_REQUIRED'))
+        throw new HttpsError('failed-precondition',error.message);
+      throw error;
+    }
     finally { db.release(); }
   }
 }

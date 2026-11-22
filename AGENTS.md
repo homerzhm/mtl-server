@@ -212,6 +212,11 @@ This directory maintains Firebase SQL Connect (`restaurant`), backed by Cloud SQ
 
 - `updateStaffOrder` atomically records cash, marks Paid or completes pickup using
   stable request UUIDs, actor/payload ownership, parent revision locks and audit.
+- `REOPEN` allows Google Admins to return Completed orders to Confirmed and clear
+  the completion timestamp. Keep receipts, refunds, totals, schedule and allocations.
+  Audit the prior pickup as `ORDER_REOPENED` and use the same revision and retry
+  safeguards as other native actions. Historical imports stay Completed and the
+  legacy allocation guard still applies. No new schema or grants are required.
 - Cash is Confirmed-only; exact positive Int32 cents may exceed the balance.
   Confirmed orders can be marked Paid at any balance. The action keeps an agreed
   final total or finalizes subtotal less discount without creating a receipt.

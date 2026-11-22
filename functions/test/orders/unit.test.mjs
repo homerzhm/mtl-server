@@ -33,6 +33,12 @@ test('order actions validate exact positive Int32 cents, revisions and request i
     assert.throws(()=>validateAction({...v,...patch}),{code:'invalid-argument'});
 });
 
+test('reopen accepts no payment or cancellation fields',()=>{
+  const request={requestId:randomUUID(),id:randomUUID(),expectedRevision:3,action:'REOPEN',amountCents:null};
+  assert.deepEqual(validateAction(request),request);
+  for (const patch of [{amountCents:1},{amountCents:0},{paymentId:randomUUID()},{refundAmountCents:0},{reason:'test'}])
+    assert.throws(()=>validateAction({...request,...patch}),{code:'invalid-argument'});
+});
 test('configuration validates schedules, immutable-code input and strict admin claims',async()=>{
   const {validateConfiguration,requireBookingAdmin,validateAvailability}=await import('../../lib/orders/capacity.js');
   assert.deepEqual(validateConfiguration({action:'UPDATE_SETTINGS',expectedRevision:0,blockMinutes:[780,660]}).blockMinutes,[660,780]);
