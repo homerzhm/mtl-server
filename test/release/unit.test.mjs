@@ -39,6 +39,10 @@ function parameters(t) {
 }
 test('cloud parameter validation rejects cross-project identities, local URLs, missing settings and shared identities',async()=>{
   const t=await target('production'),p=parameters(t);assert.deepEqual(validateParameters(t,p),p);
+  const dev=await target('dev'), devParameters={...parameters(dev),SLIPS_VERTEX_LOCATION:'us',SLIPS_VERTEX_REQUEST_TYPE:'shared'};
+  assert.deepEqual(validateParameters(dev,devParameters),devParameters);
+  assert.throws(()=>validateParameters(t,{...p,SLIPS_VERTEX_REQUEST_TYPE:'shared'}),/Vertex serving parameters/);
+  assert.throws(()=>validateParameters(dev,{...devParameters,SLIPS_VERTEX_LOCATION:'invalid'}),/Vertex serving parameters/);
   for(const bad of [{...p,ORDERS_SQL_INSTANCE:(await target('dev')).connection},{...p,STAFF_RUNTIME_SERVICE_ACCOUNT:'staff@mtl-service-e3e0c.iam.gserviceaccount.com'},
     {...p,ORDERS_LOCAL_DATABASE_URL:'postgresql://127.0.0.1/db'},{...p,STAFF_SQL_DATABASE:undefined},{...p,STAFF_REGION:'northamerica-northeast1'},
     {...p,ORDERS_RUNTIME_SERVICE_ACCOUNT:p.STAFF_RUNTIME_SERVICE_ACCOUNT,ORDERS_SQL_USER:p.STAFF_SQL_USER}]) assert.throws(()=>validateParameters(t,bad));
@@ -129,6 +133,10 @@ test('full cloud verification checks identities, scheduler and backups without f
     assert.fail(url);
   };
   const first=await verifyCloud(t,p,'all',get);assert.equal(await verifyCloud(t,p,'all',get),first);
+  const worker=functionResources.find(resource=>resource.name.endsWith('/processOrderSlipTask'));
+  worker.serviceConfig.environmentVariables.SLIPS_VERTEX_LOCATION='us';
+  await assert.rejects(verifyCloud(t,p,'all',get),/Function parameters differ: processOrderSlipTask/);
+  delete worker.serviceConfig.environmentVariables.SLIPS_VERTEX_LOCATION;
   schedulerTarget=`https://${t.functionsRegion}-${t.project}.cloudfunctions.net/reconcileStaffRoles`;
   await verifyCloud(t,p,'all',get);
   schedulerTarget='https://attacker.example/reconcileStaffRoles';await assert.rejects(verifyCloud(t,p,'all',get),/scheduler differs/);

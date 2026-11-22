@@ -7,7 +7,8 @@ import {parseArgs} from 'node:util';
 export const root = fileURLToPath(new URL('../../', import.meta.url));
 export const region = 'northamerica-northeast1';
 export const slipFunctions = ['submitOrderSlipTask','readOrderSlipTasks','processOrderSlipTask','reconcileOrderSlipTasks'];
-export const slipSettings = ['BUCKET','LLM_PROVIDER','OPENAI_MODEL','OPENAI_SECRET'];
+export const slipVertexDefaults = {SLIPS_VERTEX_LOCATION:'northamerica-northeast1',SLIPS_VERTEX_REQUEST_TYPE:'dedicated'};
+export const slipSettings = ['BUCKET','LLM_PROVIDER','OPENAI_MODEL','OPENAI_SECRET','VERTEX_LOCATION','VERTEX_REQUEST_TYPE'];
 const runtimeTopics = ['STAFF','ORDERS','REPORT','SLIPS'];
 export const functions = ['registerStaffSignIn','setStaffRoles','reconcileStaffRoles','createStaffOrder','updateStaffOrder','manageBookingConfiguration','getBookingAvailability','manageReportEntries','importHistoricalOrder',...slipFunctions];
 export const checkNames = ['release-unit','release-integration','schema','functions-unit','emulators'];
@@ -85,6 +86,11 @@ export function validateParameters(t, parameters) {
   }
   const identities = runtimeTopics.map(topic=>parameters[`${topic}_RUNTIME_SERVICE_ACCOUNT`]);
   if (new Set(identities).size !== identities.length) throw new Error('Runtime topics require separate identities');
+  const {SLIPS_VERTEX_LOCATION:vertexLocation,SLIPS_VERTEX_REQUEST_TYPE:vertexRequestType} = {...slipVertexDefaults,...parameters};
+  if (!(vertexLocation === 'northamerica-northeast1' && vertexRequestType === 'dedicated') &&
+      !(vertexLocation === 'us' && ['shared','dedicated'].includes(vertexRequestType))) {
+    throw new Error(`SLIPS Vertex serving parameters do not match ${t.project}`);
+  }
   if (parameters.SLIPS_BUCKET !== `${t.project}-order-slips` ||
       !['vertex','openai'].includes(parameters.SLIPS_LLM_PROVIDER) ||
       !/^[a-zA-Z0-9_.-]{1,80}$/.test(parameters.SLIPS_OPENAI_MODEL ?? '') ||

@@ -78,6 +78,8 @@ SLIPS_RUNTIME_SERVICE_ACCOUNT=mtl-slips-functions@mtl-service-production.iam.gse
 SLIPS_SQL_USER=mtl-slips-functions@mtl-service-production.iam
 SLIPS_BUCKET=mtl-service-production-order-slips
 SLIPS_LLM_PROVIDER=vertex
+SLIPS_VERTEX_LOCATION=northamerica-northeast1
+SLIPS_VERTEX_REQUEST_TYPE=dedicated
 SLIPS_OPENAI_MODEL=gpt-5.4-mini
 SLIPS_OPENAI_SECRET=mtl-slips-openai
 ```
@@ -88,7 +90,7 @@ operator identities in these runtime files. Generic `.env`, `.env.default` and
 selected environment alias files are rejected because Firebase merges them.
 Emulator-only `.env.local` remains available for local development.
 
-Development selects `SLIPS_LLM_PROVIDER=vertex` for new order-slip tasks. Check the Montréal Provisioned Throughput order and run a synthetic `gemini-3.8-flash` request with `X-Vertex-AI-LLM-Request-Type: dedicated` before accepting the release. A model-not-found response requires checking the Development project's access to the regional model. Submit a new synthetic task after restoring access to test the live worker. [Gemini 3.8 Flash regional availability](https://docs.cloud.google.com/gemini-enterprise-agent-platform/models/gemini/3-8-flash)
+Development uses `SLIPS_LLM_PROVIDER=vertex`, `SLIPS_VERTEX_LOCATION=us`, and `SLIPS_VERTEX_REQUEST_TYPE=shared` for Gemini 3.8 Flash pay-as-you-go. Use synthetic slips in Development because images are sent to the US multi-region endpoint. Keep `SLIPS_REGION=northamerica-northeast1` for Development Functions, queues, and storage. Montréal and dedicated throughput are the Vertex defaults. Drain pending tasks before changing the Vertex serving settings because those settings apply when the worker makes each attempt. [Gemini 3.8 Flash regional availability](https://docs.cloud.google.com/gemini-enterprise-agent-platform/models/gemini/3-8-flash)
 
 Configure operator Application Default Credentials and set these shell values:
 

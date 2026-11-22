@@ -77,30 +77,36 @@ test('catalog lookups validate tool input and cap results and calls', async () =
   await assert.rejects(interpret(provider(),Buffer.alloc(0),[],deadline()),/Invalid slip preview/);
 });
 
-for (const engine of ['vertex','openai']) {
-  test(`${engine} sends one photo and carries tool results into the structured final turn`, async () => {
+for (const {name, serving, host} of [
+  {name:'Montréal Vertex', serving:{location:'northamerica-northeast1',requestType:'dedicated'}, host:'northamerica-northeast1-aiplatform.googleapis.com'},
+  {name:'US Vertex', serving:{location:'us',requestType:'shared'}, host:'aiplatform.us.rep.googleapis.com'},
+  {name:'OpenAI'},
+]) {
+  test(`${name} sends one photo and carries tool results into the structured final turn`, async () => {
     const requests=[];
     const request=async (url,body,signal,headers) => {
       requests.push({url,body:structuredClone(body),signal,headers});
       if (requests.length===1) {
-        return engine==='vertex'
+        return serving
           ? {candidates:[{finishReason:'STOP',content:{role:'model',parts:[{thoughtSignature:'signature',
               functionCall:{name:'searchActiveCatalog',args:{query:'roast'}}}]}}]}
           : {status:'completed',output:[{type:'function_call',call_id:'call_1',name:'searchActiveCatalog',arguments:'{"query":"roast"}'}]};
       }
       const text=requests.length===2?'I have the matches':JSON.stringify(preview());
-      return engine==='vertex'
+      return serving
         ? {candidates:[{finishReason:'STOP',content:{role:'model',parts:[{text}]}}]}
         : {status:'completed',output:[{type:'message',content:[{type:'output_text',text}]}]};
     };
-    const model=engine==='vertex'?vertexProvider('test-project','gemini-3.8-flash',request):openAIProvider('gpt-5.4-mini',request);
+    const model=serving?vertexProvider('test-project','gemini-3.8-flash',request,serving):openAIProvider('gpt-5.4-mini',request);
     const result=await interpret(model,Buffer.from('photo'),catalog,deadline());
     assert.equal(result.prefill.items[0].productId.value,productId);
     assert.equal(requests.length,3);
     assert.equal(requests[2].body.tools,undefined);
-    if (engine==='vertex') {
-      assert.match(requests[0].url,/northamerica-northeast1-aiplatform.*locations\/northamerica-northeast1.*gemini-3.8-flash/);
-      assert.equal(requests[0].headers['X-Vertex-AI-LLM-Request-Type'],'dedicated');
+    if (serving) {
+      for (const request of requests) {
+        assert.equal(request.url,`https://${host}/v1/projects/test-project/locations/${serving.location}/publishers/google/models/gemini-3.8-flash:generateContent`);
+        assert.equal(request.headers['X-Vertex-AI-LLM-Request-Type'],serving.requestType);
+      }
       assert.equal(requests[0].body.contents[0].parts[0].inlineData.data,'cGhvdG8=');
       assert.match(JSON.stringify(requests[1].body.contents),/thoughtSignature.*functionResponse.*matches/);
       assert.equal(requests[2].body.generationConfig.responseMimeType,'application/json');
@@ -153,7 +159,8 @@ test('OpenAI reads only the configured Secret Manager secret and sends its key a
     urls.push(url);
     return Response.json({payload:{data:Buffer.from('fixture-key').toString('base64')}});
   };
-  const model=await createProvider({provider:'openai',model:'fixture-model'},'fixture',google,'test-key',signal);
+  const model=await createProvider({provider:'openai',model:'fixture-model'},'fixture',google,'test-key',signal,
+    ()=>assert.fail('OpenAI should not resolve Vertex settings'));
   await model.start(Buffer.from('image'),signal).turn({final:true,results:[]});
   assert.deepEqual(urls,['https://secretmanager.googleapis.com/v1/projects/fixture/secrets/test-key/versions/latest:access']);
   assert.equal(fetch.mock.callCount(),1);

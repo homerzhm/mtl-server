@@ -1,6 +1,7 @@
 import {GoogleRequest, ProviderRequest, readJson} from './transport';
 import {catalogTool, ModelSelection, previewSchema, ProviderTurn, SlipModelProvider, systemInstruction} from './model';
 import {InvalidPreview} from './preview';
+import type {VertexServing} from './config';
 
 type Part = {text?: string; thought?: boolean; functionCall?: {name: string; args: unknown; id?: string}};
 type OpenAIItem = {
@@ -16,9 +17,10 @@ function parse(text: string | undefined): unknown {
   catch { throw new InvalidPreview(); }
 }
 
-export function vertexProvider(project: string, model: string, request: ProviderRequest): SlipModelProvider {
-  const region = 'northamerica-northeast1';
-  const url = `https://${region}-aiplatform.googleapis.com/v1/projects/${project}/locations/${region}/publishers/google/models/${model}:generateContent`;
+export function vertexProvider(project: string, model: string, request: ProviderRequest, serving: VertexServing): SlipModelProvider {
+  const {location, requestType} = serving;
+  const host = location === 'us' ? 'aiplatform.us.rep.googleapis.com' : `${location}-aiplatform.googleapis.com`;
+  const url = `https://${host}/v1/projects/${project}/locations/${location}/publishers/google/models/${model}:generateContent`;
   return {start(photo, signal) {
     const history: {role: string; parts: unknown[]}[] = [{
       role: 'user', parts: [{inlineData: {mimeType: 'image/jpeg', data: photo.toString('base64')}}],
@@ -41,7 +43,7 @@ export function vertexProvider(project: string, model: string, request: Provider
           maxOutputTokens: 12288,
           ...(final ? {responseMimeType: 'application/json', responseJsonSchema: previewSchema} : {}),
         },
-      }, signal, {'X-Vertex-AI-LLM-Request-Type': 'dedicated'}) as {
+      }, signal, {'X-Vertex-AI-LLM-Request-Type': requestType}) as {
         candidates?: {finishReason?: string; content?: {role: string; parts: Part[]}}[];
       };
       const candidate = response.candidates?.[0];
@@ -93,10 +95,10 @@ export function openAIProvider(model: string, request: ProviderRequest): SlipMod
 }
 
 export async function createProvider(selection: ModelSelection, project: string, google: GoogleRequest,
-  secretName: string, signal: AbortSignal): Promise<SlipModelProvider> {
+  secretName: string, signal: AbortSignal, getVertexServing: () => VertexServing): Promise<SlipModelProvider> {
   if (selection.provider === 'vertex') {
     return vertexProvider(project, selection.model, async (url, body, signal, headers) =>
-      readJson(await google(url, {method: 'POST', body: JSON.stringify(body), headers, signal})));
+      readJson(await google(url, {method: 'POST', body: JSON.stringify(body), headers, signal})), getVertexServing());
   }
   const secretUrl = `https://secretmanager.googleapis.com/v1/projects/${project}/secrets/${secretName}/versions/latest:access`;
   const secret = await readJson(await google(secretUrl, {signal})) as {payload?: {data?: string}};

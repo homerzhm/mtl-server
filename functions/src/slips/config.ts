@@ -8,8 +8,22 @@ export const slipsUser = defineString('SLIPS_SQL_USER');
 export const slipsDatabase = defineString('SLIPS_SQL_DATABASE', {default: 'restaurant'});
 export const slipsBucket = defineString('SLIPS_BUCKET');
 export const slipsProvider = defineString('SLIPS_LLM_PROVIDER', {default: 'vertex'});
+const slipsVertexLocation = defineString('SLIPS_VERTEX_LOCATION', {default: 'northamerica-northeast1'});
+const slipsVertexRequestType = defineString('SLIPS_VERTEX_REQUEST_TYPE', {default: 'dedicated'});
 export const slipsOpenAIModel = defineString('SLIPS_OPENAI_MODEL', {default: 'gpt-5.4-mini'});
 export const slipsOpenAISecret = defineString('SLIPS_OPENAI_SECRET', {default: 'mtl-slips-openai'});
+
+export type VertexServing =
+  | {location: 'northamerica-northeast1'; requestType: 'dedicated'}
+  | {location: 'us'; requestType: 'shared' | 'dedicated'};
+
+export function vertexServing(): VertexServing {
+  const location = slipsVertexLocation.value();
+  const requestType = slipsVertexRequestType.value();
+  if (location === 'northamerica-northeast1' && requestType === 'dedicated') return {location, requestType};
+  if (location === 'us' && (requestType === 'shared' || requestType === 'dedicated')) return {location, requestType};
+  throw new Error('Invalid slip Vertex serving configuration');
+}
 
 export function selectedModel(): ModelSelection {
   const provider = slipsProvider.value();

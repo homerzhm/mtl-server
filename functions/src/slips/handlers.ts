@@ -2,7 +2,7 @@ import {logger} from 'firebase-functions';
 import {HttpsError, onCall} from 'firebase-functions/v2/https';
 import {onSchedule} from 'firebase-functions/v2/scheduler';
 import {onTaskDispatched} from 'firebase-functions/v2/tasks';
-import {isEmulator, selectedModel, slipsBucket, slipsIdentity, slipsOpenAISecret, slipsRegion} from './config';
+import {isEmulator, selectedModel, slipsBucket, slipsIdentity, slipsOpenAISecret, slipsRegion, vertexServing} from './config';
 import {slipDatabase} from './database';
 import {bucketStorage, taskQueue} from './infrastructure';
 import {createProvider} from './providers';
@@ -32,7 +32,7 @@ async function service() {
     selection: selectedModel,
     provider: (selection, signal) => {
       if (isEmulator()) throw new Error('Slip emulator provider is disabled');
-      return createProvider(selection, project, request, slipsOpenAISecret.value(), signal);
+      return createProvider(selection, project, request, slipsOpenAISecret.value(), signal, vertexServing);
     },
     operationalLog: event => logger.warn(event),
   });
