@@ -1,6 +1,6 @@
 import {readdir, readFile} from 'node:fs/promises';
 import {join} from 'node:path';
-import {root, functions, slipFunctions, slipSettings, slipVertexDefaults, digest, stableJson} from './config.mjs';
+import {root, functions, slipFunctions, slipSettings, slipDefaults, digest, stableJson} from './config.mjs';
 import {operatorAuth} from './auth.mjs';
 export async function googleGet(url, method = 'GET') {
   const auth=operatorAuth();
@@ -53,7 +53,7 @@ export async function verifyCloud(t,parameters,component='all',get=googleGet) {
       const env=f.serviceConfig.environmentVariables??{};
       const suffixes=['SQL_INSTANCE','SQL_USER','SQL_DATABASE','REGION',...(slips?slipSettings:[])];
       for(const suffix of suffixes) {
-        const key=`${topic}_${suffix}`,fallback=slipVertexDefaults[key];
+        const key=`${topic}_${suffix}`,fallback=slipDefaults[key];
         if((env[key]??fallback)!==(parameters[key]??fallback)) throw new Error(`Function parameters differ: ${name}`);
       }
       if(Object.keys(env).some(k=>k.includes('EMULATOR')||k.endsWith('LOCAL_DATABASE_URL'))) throw new Error(`Emulator settings deployed: ${name}`);

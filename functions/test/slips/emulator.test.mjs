@@ -47,7 +47,7 @@ const dependencies = {
     if(failEnqueue) throw new Error('private queue payload');
     dispatched.push(task);
   },
-  selection:()=>({provider:'openai',model:'fixture-model'}),
+  selection:()=>({provider:'deepseek',model:'deepseek-flash'}),
   provider:async selection=>{
     models.push(selection);
     if(failProvider) throw new RemoteFailure(429);
@@ -59,6 +59,7 @@ const core = new OrderSlipService(dependencies);
 
 before(async()=>{
   await pool.query(await readFile(new URL('../../../migrations/order-slip-tasks.sql',import.meta.url),'utf8'));
+  await pool.query(await readFile(new URL('../../../migrations/order-slip-deepseek-provider.sql',import.meta.url),'utf8'));
   await pool.query(`INSERT INTO public.product(id,name,chinese_name,price_cents,is_active,revision,created_at)
     VALUES ($1,'Roast Pork 12 lb','燒豬',1000,true,0,now()),($2,'Roast Chicken',NULL,1000,true,0,now()),
       ($3,'Roast Chicken retired',NULL,1000,false,0,now())`,[productId,secondProductId,randomUUID()]);
@@ -107,7 +108,7 @@ test('status and preview are persisted and available to another Admin',async()=>
   const task=await database.find(id);
   const duplicate=await Promise.all([core.process(message(task)),core.process(message(task))]);
   assert.equal(duplicate.length,2);
-  assert.deepEqual(models,[{provider:'openai',model:'fixture-model'}]);
+  assert.deepEqual(models,[{provider:'deepseek',model:'deepseek-flash'}]);
   const detail=await core.read({action:'get',taskId:id,includePhoto:true});
   assert.equal(detail.status,'READY');
   assert.equal(detail.preview.prefill.depositReceivedCents.value,2000);

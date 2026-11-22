@@ -41,6 +41,9 @@ test('cloud parameter validation rejects cross-project identities, local URLs, m
   const t=await target('production'),p=parameters(t);assert.deepEqual(validateParameters(t,p),p);
   const dev=await target('dev'), devParameters={...parameters(dev),SLIPS_VERTEX_LOCATION:'us',SLIPS_VERTEX_REQUEST_TYPE:'shared'};
   assert.deepEqual(validateParameters(dev,devParameters),devParameters);
+  const deepSeekParameters={...devParameters,SLIPS_LLM_PROVIDER:'deepseek',SLIPS_DEEPSEEK_SECRET:'dev-deepseek-key'};
+  assert.deepEqual(validateParameters(dev,deepSeekParameters),deepSeekParameters);
+  assert.throws(()=>validateParameters(dev,{...deepSeekParameters,SLIPS_DEEPSEEK_SECRET:'projects/another-project/secrets/key'}),/SLIPS provider or storage/);
   assert.throws(()=>validateParameters(t,{...p,SLIPS_VERTEX_REQUEST_TYPE:'shared'}),/Vertex serving parameters/);
   assert.throws(()=>validateParameters(dev,{...devParameters,SLIPS_VERTEX_LOCATION:'invalid'}),/Vertex serving parameters/);
   for(const bad of [{...p,ORDERS_SQL_INSTANCE:(await target('dev')).connection},{...p,STAFF_RUNTIME_SERVICE_ACCOUNT:'staff@mtl-service-e3e0c.iam.gserviceaccount.com'},

@@ -12,6 +12,7 @@ const slipsVertexLocation = defineString('SLIPS_VERTEX_LOCATION', {default: 'nor
 const slipsVertexRequestType = defineString('SLIPS_VERTEX_REQUEST_TYPE', {default: 'dedicated'});
 export const slipsOpenAIModel = defineString('SLIPS_OPENAI_MODEL', {default: 'gpt-5.4-mini'});
 export const slipsOpenAISecret = defineString('SLIPS_OPENAI_SECRET', {default: 'mtl-slips-openai'});
+export const slipsDeepSeekSecret = defineString('SLIPS_DEEPSEEK_SECRET', {default: 'mtl-slips-deepseek'});
 
 export type VertexServing =
   | {location: 'northamerica-northeast1'; requestType: 'dedicated'}
@@ -28,6 +29,7 @@ export function vertexServing(): VertexServing {
 export function selectedModel(): ModelSelection {
   const provider = slipsProvider.value();
   if (provider === 'vertex') return {provider, model: 'gemini-3.8-flash'};
+  if (provider === 'deepseek') return {provider, model: 'deepseek-flash'};
   const model = slipsOpenAIModel.value();
   if (provider !== 'openai' || !/^[a-zA-Z0-9_.-]{1,80}$/.test(model)) throw new Error('Invalid slip model configuration');
   return {provider, model};

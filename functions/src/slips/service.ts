@@ -121,9 +121,8 @@ export class OrderSlipService {
     try {
       const photo = await storage.read(task.object_key, task.object_generation, signal);
       photoLoaded = true;
-      const catalog = await database.catalog();
       const provider = await this.deps.provider({provider: task.provider, model: task.model}, signal);
-      preview = await interpret(provider, photo, catalog, signal);
+      preview = await interpret(provider, photo, () => database.catalog(), signal);
     } catch (error) {
       const invalid = error instanceof InvalidPreview;
       const permanentRemote = error instanceof RemoteFailure && error.status >= 400 && error.status < 500 &&

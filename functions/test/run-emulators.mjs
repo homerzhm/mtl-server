@@ -42,6 +42,7 @@ try {
     'SLIPS_RUNTIME_SERVICE_ACCOUNT=slips-tests@demo-mtl.iam.gserviceaccount.com',
     'SLIPS_REGION=northamerica-northeast1','SLIPS_BUCKET=demo-mtl-order-slips',
     'SLIPS_LLM_PROVIDER=vertex','SLIPS_OPENAI_MODEL=gpt-5.4-mini','SLIPS_OPENAI_SECRET=mtl-slips-openai',
+    'SLIPS_DEEPSEEK_SECRET=mtl-slips-deepseek',
     'SLIPS_VERTEX_LOCATION=us','SLIPS_VERTEX_REQUEST_TYPE=shared',
     `SLIPS_LOCAL_DATABASE_URL=${url}`,
   ].join('\n'));

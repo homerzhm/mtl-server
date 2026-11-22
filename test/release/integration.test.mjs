@@ -50,6 +50,8 @@ test('slip maintenance prepares a private table and restores grants on interrupt
   assert.equal((await client.query("SELECT count(*)::int AS n FROM pg_constraint WHERE conname='report_entry_values_check'")).rows[0].n,1);
   await deploySlipSchema(client,{parameters,firebase});
   await client.query(await readFile(join(root,'migrations/order-slip-tasks.sql'),'utf8'));
+  await client.query(await readFile(join(root,'migrations/order-slip-deepseek-provider.sql'),'utf8'));
+  assert.equal((await client.query(await readFile(join(root,'migrations/verify-order-slip-deepseek-provider.sql'),'utf8'))).rows[0].ok,true);
   await verifyContract(client,manifest);
   await verifyPermissions(client,parameters);
   await rollback(async()=>{

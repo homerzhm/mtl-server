@@ -102,6 +102,12 @@
       "file": "migrations/order-slip-tasks.sql",
       "mode": "transaction",
       "verify": "migrations/verify-order-slip-tasks.sql"
+    },
+    {
+      "id": "016-order-slip-deepseek-provider",
+      "file": "migrations/order-slip-deepseek-provider.sql",
+      "mode": "transaction",
+      "verify": "migrations/verify-order-slip-deepseek-provider.sql"
     }
   ],
   "checks": [

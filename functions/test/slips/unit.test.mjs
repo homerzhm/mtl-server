@@ -3,8 +3,8 @@ import assert from 'node:assert/strict';
 import sharp from 'sharp';
 import {readOrderSlipTasks, requireSlipAdmin, submitOrderSlipTask} from '../../lib/slips/handlers.js';
 import {decodePhoto, normalizePhoto} from '../../lib/slips/photo.js';
-import {interpret, searchCatalog} from '../../lib/slips/model.js';
-import {createProvider, vertexProvider, openAIProvider} from '../../lib/slips/providers.js';
+import {interpret} from '../../lib/slips/model.js';
+import {createProvider, vertexProvider, responsesProvider} from '../../lib/slips/providers.js';
 import {taskQueue, bucketStorage} from '../../lib/slips/infrastructure.js';
 import {validatePreview} from '../../lib/slips/preview.js';
 import {catalog, id, preview, productId, provider, unknown} from './fixtures.mjs';
@@ -67,55 +67,75 @@ test('rejects invalid evidence, confidence, product IDs, quantities, dates and C
   }
 });
 
-test('catalog lookups validate tool input and cap results and calls', async () => {
-  assert.equal(searchCatalog({query:'燒豬'},catalog)[0].id, productId);
-  assert.throws(() => searchCatalog({query:'pork',sql:'SELECT *'},catalog), /Invalid slip preview/);
-  assert.equal(searchCatalog({query:'roast'},Array.from({length:8},(_,index)=>({...catalog[0],id:String(index)}))).length,5);
-  const run = calls => interpret({start:()=>({turn:async()=>({calls})})}, Buffer.alloc(0),catalog,deadline());
-  await assert.rejects(run([{name:'createOrder',args:{}}]),/Invalid slip preview/);
-  await assert.rejects(run(Array.from({length:5},()=>({name:'searchActiveCatalog',args:{query:'pork'}}))),/Invalid slip preview/);
-  await assert.rejects(interpret(provider(),Buffer.alloc(0),[],deadline()),/Invalid slip preview/);
+test('reviews only a validated transcript and validates product IDs and citations against the supplied inputs', async () => {
+  const loadCatalog = async () => catalog;
+  const raw = preview();
+  const invalidTranscript = provider({...raw, sources: [raw.sources[0], raw.sources[0]]});
+  await assert.rejects(interpret(invalidTranscript, Buffer.alloc(0),
+    async () => assert.fail('Catalog loaded for an invalid transcript'), deadline()), /Invalid slip preview/);
+  await assert.rejects(interpret(provider(), Buffer.alloc(0), async () => [], deadline()), /Invalid slip preview/);
+  raw.prefill.items[0].productId.sourceLineIds = ['invented'];
+  await assert.rejects(interpret(provider(raw), Buffer.alloc(0), loadCatalog, deadline()), /Invalid slip preview/);
 });
 
-for (const {name, serving, host} of [
+for (const {name, serving, host, provider, modelName} of [
   {name:'Montréal Vertex', serving:{location:'northamerica-northeast1',requestType:'dedicated'}, host:'northamerica-northeast1-aiplatform.googleapis.com'},
   {name:'US Vertex', serving:{location:'us',requestType:'shared'}, host:'aiplatform.us.rep.googleapis.com'},
-  {name:'OpenAI'},
+  {name:'OpenAI', provider:'openai', modelName:'gpt-5.4-mini'},
+  {name:'DeepSeek', provider:'deepseek', modelName:'deepseek-flash'},
 ]) {
-  test(`${name} sends one photo and carries tool results into the structured final turn`, async () => {
-    const requests=[];
-    const request=async (url,body,signal,headers) => {
-      requests.push({url,body:structuredClone(body),signal,headers});
-      if (requests.length===1) {
-        return serving
-          ? {candidates:[{finishReason:'STOP',content:{role:'model',parts:[{thoughtSignature:'signature',
-              functionCall:{name:'searchActiveCatalog',args:{query:'roast'}}}]}}]}
-          : {status:'completed',output:[{type:'function_call',call_id:'call_1',name:'searchActiveCatalog',arguments:'{"query":"roast"}'}]};
-      }
-      const text=requests.length===2?'I have the matches':JSON.stringify(preview());
+  test(`${name} transcribes the photo and reviews the transcript with the active catalog`, async () => {
+    const requests = [];
+    const events = [];
+    const {sources, prefill, paperAmounts} = preview();
+    sources[0].text = '60 LB';
+    prefill.items[0].quantity = {...unknown(), sourceLineIds: [sources[0].id]};
+    const activeCatalog = [{...catalog[0], name: '60lb'}, catalog[1]];
+    const request = async (url, body, signal, headers) => {
+      requests.push({url, body: structuredClone(body), signal, headers});
+      events.push(requests.length === 1 ? 'transcribe' : 'review');
+      const text = JSON.stringify(requests.length === 1 ? {sources} : {prefill, paperAmounts});
       return serving
-        ? {candidates:[{finishReason:'STOP',content:{role:'model',parts:[{text}]}}]}
-        : {status:'completed',output:[{type:'message',content:[{type:'output_text',text}]}]};
+        ? {candidates: [{finishReason: 'STOP', content: {parts: [{text}]}}]}
+        : {status: 'completed', output: [{type: 'message', content: [{type: 'output_text', text}]}]};
     };
-    const model=serving?vertexProvider('test-project','gemini-3.8-flash',request,serving):openAIProvider('gpt-5.4-mini',request);
-    const result=await interpret(model,Buffer.from('photo'),catalog,deadline());
-    assert.equal(result.prefill.items[0].productId.value,productId);
-    assert.equal(requests.length,3);
-    assert.equal(requests[2].body.tools,undefined);
-    if (serving) {
-      for (const request of requests) {
-        assert.equal(request.url,`https://${host}/v1/projects/test-project/locations/${serving.location}/publishers/google/models/gemini-3.8-flash:generateContent`);
-        assert.equal(request.headers['X-Vertex-AI-LLM-Request-Type'],serving.requestType);
+    const model = serving ? vertexProvider('test-project', 'gemini-3.8-flash', request, serving)
+      : responsesProvider(provider, modelName, request);
+    const result = await interpret(model, Buffer.from('photo'), async () => {
+      events.push('load catalog');
+      return activeCatalog;
+    }, deadline());
+    assert.deepEqual(events, ['transcribe', 'load catalog', 'review']);
+    assert.deepEqual(result.sources, sources);
+    assert.equal(result.prefill.items[0].productId.value, productId);
+    assert.equal(result.prefill.items[0].quantity.value, null);
+    const [transcription, review] = requests.map(({body}) => body);
+    for (const {url, body, headers} of requests) {
+      assert.equal(body.tools, undefined);
+      if (serving) {
+        assert.equal(url, `https://${host}/v1/projects/test-project/locations/${serving.location}/publishers/google/models/gemini-3.8-flash:generateContent`);
+        assert.equal(headers['X-Vertex-AI-LLM-Request-Type'], serving.requestType);
+        assert.equal(body.generationConfig.responseMimeType, 'application/json');
+      } else {
+        assert.equal(body.model, modelName);
+        assert.equal(body.text.format.type, 'json_schema');
+        if (provider === 'deepseek') {
+          assert.equal(url, 'https://api.deepseek.com/responses');
+          assert.equal(body.store, undefined);
+          assert.equal(body.text.format.strict, undefined);
+        } else {
+          assert.equal(url, 'https://api.openai.com/v1/responses');
+          assert.equal(body.store, false);
+          assert.equal(body.text.format.strict, true);
+        }
       }
-      assert.equal(requests[0].body.contents[0].parts[0].inlineData.data,'cGhvdG8=');
-      assert.match(JSON.stringify(requests[1].body.contents),/thoughtSignature.*functionResponse.*matches/);
-      assert.equal(requests[2].body.generationConfig.responseMimeType,'application/json');
+    }
+    if (serving) {
+      assert.equal(transcription.contents[0].parts[0].inlineData.data, 'cGhvdG8=');
+      assert.deepEqual(review.contents[0].parts, [{text: JSON.stringify({sources, catalog: activeCatalog})}]);
     } else {
-      assert.equal(requests[0].url,'https://api.openai.com/v1/responses');
-      assert.equal(requests[0].body.store,false);
-      assert.equal(requests[0].body.input[0].content[0].image_url,'data:image/jpeg;base64,cGhvdG8=');
-      assert.equal(requests[1].body.input.find(part=>part.type==='function_call_output').call_id,'call_1');
-      assert.equal(requests[2].body.text.format.strict,true);
+      assert.equal(transcription.input[0].content[0].image_url, 'data:image/jpeg;base64,cGhvdG8=');
+      assert.equal(review.input[0].content, JSON.stringify({sources, catalog: activeCatalog}));
     }
   });
 }
@@ -144,24 +164,27 @@ test('storage upload and task dispatch use generation guards and metadata-only q
 });
 
 
-test('OpenAI reads only the configured Secret Manager secret and sends its key as authorization', async t => {
-  const urls=[];
-  const signal=deadline();
-  const fetch=t.mock.method(globalThis,'fetch',async (url,options)=>{
-    assert.equal(url,'https://api.openai.com/v1/responses');
-    assert.equal(options.headers.Authorization,'Bearer fixture-key');
-    assert.equal(options.signal,signal);
-    assert.equal(JSON.parse(options.body).store,false);
-    assert.doesNotMatch(options.body,/fixture-key/);
-    return Response.json({status:'completed',output:[{type:'message',content:[{type:'output_text',text:'{}'}]}]});
+for (const [provider, endpoint] of [['openai','https://api.openai.com/v1/responses'], ['deepseek','https://api.deepseek.com/responses']]) {
+  test(`${provider} reads only its configured secret and sends its key as authorization`, async t => {
+    const urls=[];
+    const signal=deadline();
+    const fetch=t.mock.method(globalThis,'fetch',async (url,options)=>{
+      assert.equal(url,endpoint);
+      assert.equal(options.headers.Authorization,'Bearer fixture-key');
+      assert.equal(options.signal,signal);
+      assert.doesNotMatch(options.body,/fixture-key/);
+      return Response.json({status:'completed',output:[{type:'message',content:[{type:'output_text',text:'{}'}]}]});
+    });
+    const google=async url=>{
+      urls.push(url);
+      return Response.json({payload:{data:Buffer.from('fixture-key').toString('base64')}});
+    };
+    const model=await createProvider({provider,model:'fixture-model'},'fixture',google, selected => {
+      assert.equal(selected,provider);
+      return `test-${selected}-key`;
+    },signal,()=>assert.fail('External provider should not resolve Vertex settings'));
+    await model.transcribe(Buffer.from('image'),signal);
+    assert.deepEqual(urls,[`https://secretmanager.googleapis.com/v1/projects/fixture/secrets/test-${provider}-key/versions/latest:access`]);
+    assert.equal(fetch.mock.callCount(),1);
   });
-  const google=async url=>{
-    urls.push(url);
-    return Response.json({payload:{data:Buffer.from('fixture-key').toString('base64')}});
-  };
-  const model=await createProvider({provider:'openai',model:'fixture-model'},'fixture',google,'test-key',signal,
-    ()=>assert.fail('OpenAI should not resolve Vertex settings'));
-  await model.start(Buffer.from('image'),signal).turn({final:true,results:[]});
-  assert.deepEqual(urls,['https://secretmanager.googleapis.com/v1/projects/fixture/secrets/test-key/versions/latest:access']);
-  assert.equal(fetch.mock.callCount(),1);
-});
+}

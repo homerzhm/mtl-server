@@ -2024,7 +2024,7 @@
       "table_name": "order_slip_task",
       "name": "order_slip_task_state_valid",
       "contype": "c",
-      "definition": "CHECK (((status = ANY (ARRAY['QUEUED'::text, 'PROCESSING'::text, 'READY'::text, 'FAILED'::text])) AND (provider = ANY (ARRAY['vertex'::text, 'openai'::text])) AND ((attempts >= 0) AND (attempts <= 3)) AND (dispatch_generation > 0) AND (((status = 'READY'::text) AND (preview IS NOT NULL) AND (jsonb_typeof(preview) = 'object'::text)) OR ((status <> 'READY'::text) AND (preview IS NULL))) AND (((status = 'PROCESSING'::text) AND (lease_token IS NOT NULL) AND (lease_until IS NOT NULL)) OR ((status <> 'PROCESSING'::text) AND (lease_token IS NULL) AND (lease_until IS NULL))) AND (((status = 'FAILED'::text) AND (failure_code IS NOT NULL)) OR ((status <> 'FAILED'::text) AND (failure_code IS NULL)))))",
+      "definition": "CHECK (((status = ANY (ARRAY['QUEUED'::text, 'PROCESSING'::text, 'READY'::text, 'FAILED'::text])) AND (provider = ANY (ARRAY['vertex'::text, 'openai'::text, 'deepseek'::text])) AND ((attempts >= 0) AND (attempts <= 3)) AND (dispatch_generation > 0) AND (((status = 'READY'::text) AND (preview IS NOT NULL) AND (jsonb_typeof(preview) = 'object'::text)) OR ((status <> 'READY'::text) AND (preview IS NULL))) AND (((status = 'PROCESSING'::text) AND (lease_token IS NOT NULL) AND (lease_until IS NOT NULL)) OR ((status <> 'PROCESSING'::text) AND (lease_token IS NULL) AND (lease_until IS NULL))) AND (((status = 'FAILED'::text) AND (failure_code IS NOT NULL)) OR ((status <> 'FAILED'::text) AND (failure_code IS NULL)))))",
       "convalidated": true
     },
     {

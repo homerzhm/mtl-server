@@ -22,6 +22,7 @@ export type OrderSlipPreview = {
 };
 
 export type CatalogProduct = {id: string; name: string; chineseName: string | null};
+export type SlipSource = OrderSlipPreview['sources'][number];
 type JsonSchema = Record<string, unknown>;
 const string = {type: 'string'};
 const integer = {type: 'integer'};
@@ -35,9 +36,10 @@ const suggested = (value: JsonSchema) => schemaObject({
   sourceLineIds: array(string),
 });
 const numeric = suggested(integer);
-export const previewSchema = schemaObject({
-  version: {type: 'integer', enum: [1]},
+export const transcriptSchema = schemaObject({
   sources: array(schemaObject({id: string, text: string})),
+});
+export const reviewSchema = schemaObject({
   prefill: schemaObject({
     items: array(schemaObject({productId: suggested(string), quantity: numeric})),
     pickup: schemaObject({
@@ -89,17 +91,26 @@ function phone(value: unknown): string {
   throw new InvalidPreview();
 }
 
-export function validatePreview(raw: unknown, catalog: CatalogProduct[]): OrderSlipPreview {
-  const root = object(raw, ['version', 'sources', 'prefill', 'paperAmounts']);
-  if (root.version !== 1) throw new InvalidPreview();
+function validateSources(raw: unknown): SlipSource[] {
   const ids = new Set<string>();
-  const sources = list(root.sources, 40).map(rawSource => {
+  return list(raw, 40).map(rawSource => {
     const source = object(rawSource, ['id', 'text']);
     const id = boundedText(source.id, 32);
     if (!/^[A-Za-z0-9_-]+$/.test(id) || ids.has(id)) throw new InvalidPreview();
     ids.add(id);
     return {id, text: boundedText(source.text, 240)};
   });
+}
+
+export function validateTranscript(raw: unknown): SlipSource[] {
+  return validateSources(object(raw, ['sources']).sources);
+}
+
+export function validatePreview(raw: unknown, catalog: CatalogProduct[]): OrderSlipPreview {
+  const root = object(raw, ['version', 'sources', 'prefill', 'paperAmounts']);
+  if (root.version !== 1) throw new InvalidPreview();
+  const sources = validateSources(root.sources);
+  const ids = new Set(sources.map(source => source.id));
   function field<T>(rawField: unknown, parse: (value: unknown) => T): Suggested<T> {
     const candidate = object(rawField, ['value', 'confidence', 'sourceLineIds']);
     const refs = list(candidate.sourceLineIds, 40).map(id => {

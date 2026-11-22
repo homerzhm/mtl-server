@@ -34,15 +34,8 @@ export function preview() {
 }
 
 export function provider(raw = preview()) {
-  return {start() {
-    let round = 0;
-    return {async turn({final}) {
-      if (final) return {calls:[], final:raw};
-      if (round++) return {calls:[]};
-      return {calls:[
-        {name:'searchActiveCatalog',args:{query:'Roast Pork 12 lb'}},
-        {name:'searchActiveCatalog',args:{query:'Roast Chicken'}},
-      ]};
-    }};
-  }};
+  return {
+    async transcribe() { return {sources: raw.sources}; },
+    async review() { return {prefill: raw.prefill, paperAmounts: raw.paperAmounts}; },
+  };
 }
