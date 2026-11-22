@@ -14,7 +14,7 @@ Use native Node 22, npm and a current Firebase CLI. Install locked dependencies 
 1. Implement locally, update `release/manifest.json`, run local tests and commit.
    Keep the checkout clean. The manifest selects the connector and Functions.
    Schema changes run through the reviewed maintenance named in the manifest.
-   Follow the [Live admin Report](live-report.md) prerequisites for this release.
+   Follow the [Admin order-slip tasks](order-slip-tasks.md) prerequisites for this release and keep the existing [Live admin Report](live-report.md) grants.
 2. Run `npm run deploy`. This deploys to `mtl-service-e3e0c`.
 3. Verify business behavior in dev using designated accounts/orders. Run
    `npm run release:verify -- --accept-dev` to attest that acceptance. The command
@@ -26,7 +26,7 @@ Use native Node 22, npm and a current Firebase CLI. Install locked dependencies 
 Production is `mtl-service-production`. Its database and SQL Connect service are
 in Toronto (`northamerica-northeast2`); dev stays in Montréal
 (`northamerica-northeast1`). Production Functions and their scheduler also use Toronto; dev Functions and
-its scheduler stay in Montréal. Topic-specific `STAFF_REGION`, `ORDERS_REGION`, and `REPORT_REGION`
+its scheduler stay in Montréal. Topic-specific `STAFF_REGION`, `ORDERS_REGION`, `REPORT_REGION`, and `SLIPS_REGION`
 parameters select the endpoint region without changing exported function names. The Cloud SQL connector
 uses the database region in each environment’s instance connection name. No code, schema or connector copies are
 maintained. The generated `.firebase-release-<environment>-<pid>.json` and ignored
@@ -71,9 +71,18 @@ REPORT_SQL_INSTANCE=mtl-service-production:northamerica-northeast2:mtl-restauran
 REPORT_SQL_DATABASE=restaurant
 REPORT_RUNTIME_SERVICE_ACCOUNT=mtl-report-functions@mtl-service-production.iam.gserviceaccount.com
 REPORT_SQL_USER=mtl-report-functions@mtl-service-production.iam
+SLIPS_REGION=northamerica-northeast2
+SLIPS_SQL_INSTANCE=mtl-service-production:northamerica-northeast2:mtl-restaurant-production-db
+SLIPS_SQL_DATABASE=restaurant
+SLIPS_RUNTIME_SERVICE_ACCOUNT=mtl-slips-functions@mtl-service-production.iam.gserviceaccount.com
+SLIPS_SQL_USER=mtl-slips-functions@mtl-service-production.iam
+SLIPS_BUCKET=mtl-service-production-order-slips
+SLIPS_LLM_PROVIDER=vertex
+SLIPS_OPENAI_MODEL=gpt-5.4-mini
+SLIPS_OPENAI_SECRET=mtl-slips-openai
 ```
 
-Use the actual service account names; the three identities must differ and belong to
+Use the actual service account names; the four identities must differ and belong to
 the selected project. IAM SQL usernames omit `.gserviceaccount.com`. Never place
 operator identities in these runtime files. Generic `.env`, `.env.default` and
 selected environment alias files are rejected because Firebase merges them.
@@ -218,7 +227,7 @@ Do this only after an explicit cloud setup/deployment request.
    Set the actual mapping in `release/environments.json` before the first commit
    accepted in dev. Match PostgreSQL version/flags deliberately; production sizing
    and high availability may exceed dev. Retain three reserved connections plus
-   room for eighteen pooled runtime connections and operator sessions.
+   room for twenty-two pooled runtime connections and operator sessions.
 2. Configure billing, budget alerts, required APIs (SQL Connect, Cloud SQL Admin,
    Auth/Identity Toolkit, Functions/Run, Build, Artifact Registry and Scheduler),
    monitoring/alerts, backups/PITR, recovery retention and a restore drill. Inspect
@@ -228,12 +237,12 @@ Do this only after an explicit cloud setup/deployment request.
    business data are imported. The iOS target/configuration change is separate. Its production SQL Connect
    connector must explicitly use `northamerica-northeast2`; changing only the
    Firebase project plist does not change the generated dev connector location.
-4. Create dedicated Staff, Orders and Report runtime identities and IAM database users.
+4. Create dedicated Staff, Orders, Report and Slips runtime identities and IAM database users.
    Apply the exact current topic grants in staff-management/live-order-booking,
    including subsequent action/payment/edit grants. Staff alone needs Auth
    get/list/update privileges. Orders must have no Auth administration, product or
    client UPDATE, private-context DML, or unrelated Staff-table access. See
-   [Live admin Report](live-report.md) for the Report runtime and grants.
+   [Live admin Report](live-report.md) and [Admin order-slip tasks](order-slip-tasks.md) for their grants and resources.
 5. Create the ignored parameter file and run
    `npm run release:config -- --environment production`. It generates a local
    Firebase config path without cloud access. Use that printed config path and an explicit
@@ -244,9 +253,9 @@ Do this only after an explicit cloud setup/deployment request.
    `order-integrity`, `order-paid-status`, `order-capacity-booking`, `order-actions`,
    `payment-edits`, `order-edits`, then `restore-item-capacity-reference`. Apply grants and verify effective private access.
    Apply the Report constraints after the schema has created its ledger tables.
-   Apply and verify the historical-order import guard before deploying the callable.
+   Apply and verify the historical-order import guard and slip task state constraint before deploying Functions.
    Do not reuse this fresh-database schema procedure on populated dev.
-7. Deploy the matching connector and all nine Functions to initialize the cloud
+7. Deploy the matching connector and all thirteen Functions to initialize the cloud
    resources. Confirm scheduler readiness. Bootstrap an explicit production Google
    UID using the trusted Staff setup command with production operator parameters;
    it uses shell parameters, not automatic dotenv loading. Preserve genuine admin

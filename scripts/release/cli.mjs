@@ -1,7 +1,7 @@
 import {spawn} from 'node:child_process';
 import {fileURLToPath} from 'node:url';
 import {join} from 'node:path';
-import {root, options, target, loadManifest, readParameters, firebaseConfig, firebaseArgs, assertExports, functions as functionNames} from './config.mjs';
+import {root, options, target, loadManifest, readParameters, firebaseConfig, firebaseArgs, assertExports, functions as functionNames, slipFunctions} from './config.mjs';
 import {connect, withLock, assertEnvironment, assertPrivateLedger, applyMigrations, migrationState, migrationChecksum, startRelease, saveStage, markState, releaseRow, assertPromotable, assertEmpty, inventory, verifyContract} from './database.mjs';
 import {verifyPermissions} from './permissions.mjs';
 import {verifyCloud} from './cloud.mjs';
@@ -45,7 +45,7 @@ async function databaseChecks(client,m,parameters) {
   await verifyPermissions(client,parameters);
   await assertPrivateLedger(client,parameters);
   const connections=(await client.query('SHOW max_connections')).rows[0].max_connections;
-  const pooledConnections=functionNames.length*2; // Each Function has one instance and a two-connection pool.
+  const pooledConnections=(functionNames.length-slipFunctions.length)*2+slipFunctions.length;
   if(Number(connections)-3<pooledConnections) throw new Error(`Insufficient database connection budget (${pooledConnections} pooled + 3 reserved)`);
   return contract;
 }

@@ -585,6 +585,158 @@
       "column_default": null
     },
     {
+      "table_name": "order_slip_task",
+      "column_name": "id",
+      "data_type": "uuid",
+      "udt_name": "uuid",
+      "is_nullable": "NO",
+      "column_default": null
+    },
+    {
+      "table_name": "order_slip_task",
+      "column_name": "actor_uid",
+      "data_type": "text",
+      "udt_name": "text",
+      "is_nullable": "NO",
+      "column_default": null
+    },
+    {
+      "table_name": "order_slip_task",
+      "column_name": "attempts",
+      "data_type": "integer",
+      "udt_name": "int4",
+      "is_nullable": "NO",
+      "column_default": null
+    },
+    {
+      "table_name": "order_slip_task",
+      "column_name": "available_at",
+      "data_type": "timestamp with time zone",
+      "udt_name": "timestamptz",
+      "is_nullable": "NO",
+      "column_default": null
+    },
+    {
+      "table_name": "order_slip_task",
+      "column_name": "checksum",
+      "data_type": "text",
+      "udt_name": "text",
+      "is_nullable": "NO",
+      "column_default": null
+    },
+    {
+      "table_name": "order_slip_task",
+      "column_name": "created_at",
+      "data_type": "timestamp with time zone",
+      "udt_name": "timestamptz",
+      "is_nullable": "NO",
+      "column_default": null
+    },
+    {
+      "table_name": "order_slip_task",
+      "column_name": "dispatch_generation",
+      "data_type": "integer",
+      "udt_name": "int4",
+      "is_nullable": "NO",
+      "column_default": null
+    },
+    {
+      "table_name": "order_slip_task",
+      "column_name": "dispatched_at",
+      "data_type": "timestamp with time zone",
+      "udt_name": "timestamptz",
+      "is_nullable": "YES",
+      "column_default": null
+    },
+    {
+      "table_name": "order_slip_task",
+      "column_name": "expires_at",
+      "data_type": "timestamp with time zone",
+      "udt_name": "timestamptz",
+      "is_nullable": "NO",
+      "column_default": null
+    },
+    {
+      "table_name": "order_slip_task",
+      "column_name": "failure_code",
+      "data_type": "text",
+      "udt_name": "text",
+      "is_nullable": "YES",
+      "column_default": null
+    },
+    {
+      "table_name": "order_slip_task",
+      "column_name": "lease_token",
+      "data_type": "uuid",
+      "udt_name": "uuid",
+      "is_nullable": "YES",
+      "column_default": null
+    },
+    {
+      "table_name": "order_slip_task",
+      "column_name": "lease_until",
+      "data_type": "timestamp with time zone",
+      "udt_name": "timestamptz",
+      "is_nullable": "YES",
+      "column_default": null
+    },
+    {
+      "table_name": "order_slip_task",
+      "column_name": "model",
+      "data_type": "text",
+      "udt_name": "text",
+      "is_nullable": "NO",
+      "column_default": null
+    },
+    {
+      "table_name": "order_slip_task",
+      "column_name": "object_generation",
+      "data_type": "text",
+      "udt_name": "text",
+      "is_nullable": "NO",
+      "column_default": null
+    },
+    {
+      "table_name": "order_slip_task",
+      "column_name": "object_key",
+      "data_type": "text",
+      "udt_name": "text",
+      "is_nullable": "NO",
+      "column_default": null
+    },
+    {
+      "table_name": "order_slip_task",
+      "column_name": "preview",
+      "data_type": "jsonb",
+      "udt_name": "jsonb",
+      "is_nullable": "YES",
+      "column_default": null
+    },
+    {
+      "table_name": "order_slip_task",
+      "column_name": "provider",
+      "data_type": "text",
+      "udt_name": "text",
+      "is_nullable": "NO",
+      "column_default": null
+    },
+    {
+      "table_name": "order_slip_task",
+      "column_name": "status",
+      "data_type": "text",
+      "udt_name": "text",
+      "is_nullable": "NO",
+      "column_default": null
+    },
+    {
+      "table_name": "order_slip_task",
+      "column_name": "updated_at",
+      "data_type": "timestamp with time zone",
+      "udt_name": "timestamptz",
+      "is_nullable": "NO",
+      "column_default": null
+    },
+    {
       "table_name": "payment",
       "column_name": "id",
       "data_type": "uuid",
@@ -1778,6 +1930,118 @@
       "convalidated": true
     },
     {
+      "table_name": "order_slip_task",
+      "name": "order_slip_task_actor_uid_not_null",
+      "contype": "n",
+      "definition": "NOT NULL actor_uid",
+      "convalidated": true
+    },
+    {
+      "table_name": "order_slip_task",
+      "name": "order_slip_task_attempts_not_null",
+      "contype": "n",
+      "definition": "NOT NULL attempts",
+      "convalidated": true
+    },
+    {
+      "table_name": "order_slip_task",
+      "name": "order_slip_task_available_at_not_null",
+      "contype": "n",
+      "definition": "NOT NULL available_at",
+      "convalidated": true
+    },
+    {
+      "table_name": "order_slip_task",
+      "name": "order_slip_task_checksum_not_null",
+      "contype": "n",
+      "definition": "NOT NULL checksum",
+      "convalidated": true
+    },
+    {
+      "table_name": "order_slip_task",
+      "name": "order_slip_task_created_at_not_null",
+      "contype": "n",
+      "definition": "NOT NULL created_at",
+      "convalidated": true
+    },
+    {
+      "table_name": "order_slip_task",
+      "name": "order_slip_task_dispatch_generation_not_null",
+      "contype": "n",
+      "definition": "NOT NULL dispatch_generation",
+      "convalidated": true
+    },
+    {
+      "table_name": "order_slip_task",
+      "name": "order_slip_task_expires_at_not_null",
+      "contype": "n",
+      "definition": "NOT NULL expires_at",
+      "convalidated": true
+    },
+    {
+      "table_name": "order_slip_task",
+      "name": "order_slip_task_id_not_null",
+      "contype": "n",
+      "definition": "NOT NULL id",
+      "convalidated": true
+    },
+    {
+      "table_name": "order_slip_task",
+      "name": "order_slip_task_model_not_null",
+      "contype": "n",
+      "definition": "NOT NULL model",
+      "convalidated": true
+    },
+    {
+      "table_name": "order_slip_task",
+      "name": "order_slip_task_object_generation_not_null",
+      "contype": "n",
+      "definition": "NOT NULL object_generation",
+      "convalidated": true
+    },
+    {
+      "table_name": "order_slip_task",
+      "name": "order_slip_task_object_key_not_null",
+      "contype": "n",
+      "definition": "NOT NULL object_key",
+      "convalidated": true
+    },
+    {
+      "table_name": "order_slip_task",
+      "name": "order_slip_task_pkey",
+      "contype": "p",
+      "definition": "PRIMARY KEY (id)",
+      "convalidated": true
+    },
+    {
+      "table_name": "order_slip_task",
+      "name": "order_slip_task_provider_not_null",
+      "contype": "n",
+      "definition": "NOT NULL provider",
+      "convalidated": true
+    },
+    {
+      "table_name": "order_slip_task",
+      "name": "order_slip_task_state_valid",
+      "contype": "c",
+      "definition": "CHECK (((status = ANY (ARRAY['QUEUED'::text, 'PROCESSING'::text, 'READY'::text, 'FAILED'::text])) AND (provider = ANY (ARRAY['vertex'::text, 'openai'::text])) AND ((attempts >= 0) AND (attempts <= 3)) AND (dispatch_generation > 0) AND (((status = 'READY'::text) AND (preview IS NOT NULL) AND (jsonb_typeof(preview) = 'object'::text)) OR ((status <> 'READY'::text) AND (preview IS NULL))) AND (((status = 'PROCESSING'::text) AND (lease_token IS NOT NULL) AND (lease_until IS NOT NULL)) OR ((status <> 'PROCESSING'::text) AND (lease_token IS NULL) AND (lease_until IS NULL))) AND (((status = 'FAILED'::text) AND (failure_code IS NOT NULL)) OR ((status <> 'FAILED'::text) AND (failure_code IS NULL)))))",
+      "convalidated": true
+    },
+    {
+      "table_name": "order_slip_task",
+      "name": "order_slip_task_status_not_null",
+      "contype": "n",
+      "definition": "NOT NULL status",
+      "convalidated": true
+    },
+    {
+      "table_name": "order_slip_task",
+      "name": "order_slip_task_updated_at_not_null",
+      "contype": "n",
+      "definition": "NOT NULL updated_at",
+      "convalidated": true
+    },
+    {
       "table_name": "payment",
       "name": "payment_amount_cents_not_null",
       "contype": "n",
@@ -2468,6 +2732,26 @@
       "table_name": "order_item",
       "name": "order_item_productId_idx",
       "definition": "CREATE INDEX \"order_item_productId_idx\" ON public.order_item USING btree (product_id)"
+    },
+    {
+      "table_name": "order_slip_task",
+      "name": "order_slip_task_createdAt_id_idx",
+      "definition": "CREATE INDEX \"order_slip_task_createdAt_id_idx\" ON public.order_slip_task USING btree (created_at, id)"
+    },
+    {
+      "table_name": "order_slip_task",
+      "name": "order_slip_task_expiresAt_idx",
+      "definition": "CREATE INDEX \"order_slip_task_expiresAt_idx\" ON public.order_slip_task USING btree (expires_at)"
+    },
+    {
+      "table_name": "order_slip_task",
+      "name": "order_slip_task_pkey",
+      "definition": "CREATE UNIQUE INDEX order_slip_task_pkey ON public.order_slip_task USING btree (id)"
+    },
+    {
+      "table_name": "order_slip_task",
+      "name": "order_slip_task_status_availableAt_idx",
+      "definition": "CREATE INDEX \"order_slip_task_status_availableAt_idx\" ON public.order_slip_task USING btree (status, available_at)"
     },
     {
       "table_name": "payment",

@@ -88,6 +88,20 @@
       "file": "migrations/historical-order-import.sql",
       "mode": "transaction",
       "verify": "migrations/verify-historical-order-import.sql"
+    },
+    {
+      "id": "014-order-slip-schema",
+      "file": "migrations/deploy-order-slip-schema.mjs",
+      "mode": "maintenance",
+      "idempotent": true,
+      "procedure": "docs/order-slip-tasks.md",
+      "verify": "migrations/verify-order-slip-schema.sql"
+    },
+    {
+      "id": "015-order-slip-tasks",
+      "file": "migrations/order-slip-tasks.sql",
+      "mode": "transaction",
+      "verify": "migrations/verify-order-slip-tasks.sql"
     }
   ],
   "checks": [
@@ -98,5 +112,5 @@
     "emulators"
   ],
   "databaseContract": "release/database-contract.json",
-  "schemaMaintenance": "011-report-schema"
+  "schemaMaintenance": "014-order-slip-schema"
 }

@@ -6,7 +6,10 @@ import {parseArgs} from 'node:util';
 
 export const root = fileURLToPath(new URL('../../', import.meta.url));
 export const region = 'northamerica-northeast1';
-export const functions = ['registerStaffSignIn','setStaffRoles','reconcileStaffRoles','createStaffOrder','updateStaffOrder','manageBookingConfiguration','getBookingAvailability','manageReportEntries','importHistoricalOrder'];
+export const slipFunctions = ['submitOrderSlipTask','readOrderSlipTasks','processOrderSlipTask','reconcileOrderSlipTasks'];
+export const slipSettings = ['BUCKET','LLM_PROVIDER','OPENAI_MODEL','OPENAI_SECRET'];
+const runtimeTopics = ['STAFF','ORDERS','REPORT','SLIPS'];
+export const functions = ['registerStaffSignIn','setStaffRoles','reconcileStaffRoles','createStaffOrder','updateStaffOrder','manageBookingConfiguration','getBookingAvailability','manageReportEntries','importHistoricalOrder',...slipFunctions];
 export const checkNames = ['release-unit','release-integration','schema','functions-unit','emulators'];
 export const digest = value => createHash('sha256').update(value).digest('hex');
 export const stableJson = value => JSON.stringify(value, (_key,item) => item && typeof item === 'object' && !Array.isArray(item) ? Object.fromEntries(Object.entries(item).sort(([a],[b])=>a.localeCompare(b))) : item);
@@ -71,16 +74,23 @@ export function parseEnv(text) {
   return result;
 }
 export function validateParameters(t, parameters) {
-  const allowed = ['STAFF','ORDERS','REPORT'].flatMap(topic=>['SQL_INSTANCE','SQL_USER','SQL_DATABASE','RUNTIME_SERVICE_ACCOUNT','REGION'].map(k=>`${topic}_${k}`));
+  const allowed = runtimeTopics.flatMap(topic=>['SQL_INSTANCE','SQL_USER','SQL_DATABASE','RUNTIME_SERVICE_ACCOUNT','REGION'].map(k=>`${topic}_${k}`));
+  allowed.push(...slipSettings.map(suffix=>`SLIPS_${suffix}`));
   if (Object.keys(parameters).some(key=>!allowed.includes(key))) throw new Error('Unexpected cloud parameter (emulator/credential settings are forbidden)');
-  for (const topic of ['STAFF','ORDERS','REPORT']) {
+  for (const topic of runtimeTopics) {
     const email = parameters[`${topic}_RUNTIME_SERVICE_ACCOUNT`];
     if (!email || !new RegExp(`^[a-z][a-z0-9-]*@${t.project}\\.iam\\.gserviceaccount\\.com$`).test(email) ||
         parameters[`${topic}_REGION`] !== t.functionsRegion || parameters[`${topic}_SQL_INSTANCE`] !== t.connection || parameters[`${topic}_SQL_DATABASE`] !== 'restaurant' ||
         parameters[`${topic}_SQL_USER`] !== email.replace('.gserviceaccount.com','')) throw new Error(`${topic} parameters do not match ${t.project}`);
   }
-  const identities = ['STAFF','ORDERS','REPORT'].map(topic=>parameters[`${topic}_RUNTIME_SERVICE_ACCOUNT`]);
-  if (new Set(identities).size !== identities.length) throw new Error('Staff, Orders and Report require separate identities');
+  const identities = runtimeTopics.map(topic=>parameters[`${topic}_RUNTIME_SERVICE_ACCOUNT`]);
+  if (new Set(identities).size !== identities.length) throw new Error('Runtime topics require separate identities');
+  if (parameters.SLIPS_BUCKET !== `${t.project}-order-slips` ||
+      !['vertex','openai'].includes(parameters.SLIPS_LLM_PROVIDER) ||
+      !/^[a-zA-Z0-9_.-]{1,80}$/.test(parameters.SLIPS_OPENAI_MODEL ?? '') ||
+      !/^[a-zA-Z0-9_-]{1,80}$/.test(parameters.SLIPS_OPENAI_SECRET ?? '')) {
+    throw new Error(`SLIPS provider or storage parameters do not match ${t.project}`);
+  }
   return parameters;
 }
 export async function readParameters(t) {

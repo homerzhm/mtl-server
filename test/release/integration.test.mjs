@@ -9,6 +9,7 @@ import {verifyPermissions} from '../../scripts/release/permissions.mjs';
 import {componentStage} from '../../scripts/release/cli.mjs';
 import {up as deploySpecialDaySchema} from '../../migrations/deploy-special-day-schema.mjs';
 import {up as deployReportSchema} from '../../migrations/deploy-report-schema.mjs';
+import {up as deploySlipSchema} from '../../migrations/deploy-order-slip-schema.mjs';
 let client,manifest;
 before(async()=>{
   client=await fixture();manifest=await loadManifest();
@@ -27,6 +28,45 @@ test('fresh migration setup has no business seeds and only required schedule',as
   assert.equal((await client.query(await readFile(join(root,'migrations/verify-historical-order-import.sql'),'utf8'))).rows[0].ok,true);
   await verifyContract(client,manifest);await verifyPermissions(client,parameters);await assertPrivateLedger(client,parameters);
 });
+test('slip maintenance prepares a private table and restores grants on interrupted registration',async()=>{
+  await client.query('DROP TABLE public.order_slip_task');
+  let registrations=0;
+  const firebase=async(command,args)=>{
+    assert.equal(command,'deploy');
+    assert.deepEqual(args,['--only','dataconnect:restaurant:schema','--non-interactive']);
+    registrations++;
+    assert.equal((await client.query(await readFile(join(root,'migrations/verify-order-slip-schema.sql'),'utf8'))).rows[0].ok,true);
+    assert.deepEqual((await client.query(`SELECT
+      has_table_privilege('firebasereader_restaurant_public','public.order_slip_task','REFERENCES') AS ddl,
+      has_table_privilege('firebasereader_restaurant_public','public.order_slip_task','SELECT') AS reads`)).rows,
+    [{ddl:true,reads:false}]);
+    await assert.rejects(client.query('DELETE FROM public.report_entry WHERE false'),{code:'55000'});
+    await assert.rejects(client.query('DELETE FROM public.order_slip_task WHERE false'),{code:'55000'});
+    assert.equal((await client.query("SELECT count(*)::int AS n FROM pg_constraint WHERE conname='report_entry_values_check'")).rows[0].n,0);
+    if(registrations===1) throw new Error('Slip registration interrupted');
+  };
+  await assert.rejects(deploySlipSchema(client,{parameters,firebase}),/Slip registration interrupted/);
+  await verifyPermissions(client,parameters);
+  assert.equal((await client.query("SELECT count(*)::int AS n FROM pg_constraint WHERE conname='report_entry_values_check'")).rows[0].n,1);
+  await deploySlipSchema(client,{parameters,firebase});
+  await client.query(await readFile(join(root,'migrations/order-slip-tasks.sql'),'utf8'));
+  await verifyContract(client,manifest);
+  await verifyPermissions(client,parameters);
+  await rollback(async()=>{
+    await client.query('GRANT SELECT(price_cents) ON public.product TO release_slips');
+    await assert.rejects(verifyPermissions(client,parameters),/SLIPS unexpected SELECT/);
+  });
+  await rollback(async()=>{
+    await client.query('GRANT SELECT(preview) ON public.order_slip_task TO firebasewriter_release');
+    await assert.rejects(verifyPermissions(client,parameters),/Private order slip/);
+  });
+  await rollback(async()=>{
+    await client.query('SET LOCAL ROLE release_slips');
+    await client.query('SELECT id,name,chinese_name FROM public.product WHERE is_active');
+    await assert.rejects(client.query('SELECT phone_number FROM public.client'),{code:'42501'});
+  });
+});
+
 test('special-day schema maintenance creates SQL before registration and resumes an interrupted release',async()=>{
   const firebase=async (command,args)=>{
     assert.equal(command,'deploy');

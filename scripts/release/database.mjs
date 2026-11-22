@@ -35,7 +35,7 @@ export async function assertPrivateLedger(client, parameters) {
   const owner=(await client.query("SELECT pg_get_userbyid(nspowner) owner FROM pg_namespace WHERE nspname='mtl_operations'")).rows[0]?.owner;
   if (!owner) throw new Error('Operator must initialize release/operations.sql first');
   const roles=(await client.query(`SELECT rolname,rolsuper FROM pg_roles WHERE rolname<>$1 AND
-    (rolname LIKE 'firebasereader_%' OR rolname LIKE 'firebasewriter_%' OR rolname IN ($2,$3,$4))`,[owner,parameters.STAFF_SQL_USER,parameters.ORDERS_SQL_USER,parameters.REPORT_SQL_USER])).rows;
+    (rolname LIKE 'firebasereader_%' OR rolname LIKE 'firebasewriter_%' OR rolname IN ($2,$3,$4,$5))`,[owner,parameters.STAFF_SQL_USER,parameters.ORDERS_SQL_USER,parameters.REPORT_SQL_USER,parameters.SLIPS_SQL_USER])).rows;
   for(const role of roles.filter(x=>!x.rolsuper)) {
     const access=await client.query(`SELECT has_schema_privilege($1,'mtl_operations','USAGE') OR has_schema_privilege($1,'mtl_operations','CREATE') OR
       EXISTS(SELECT 1 FROM pg_tables WHERE schemaname='mtl_operations' AND
@@ -134,7 +134,7 @@ export async function assertPromotable(client,commit,m,fingerprint) {
   if((await migrationState(client,m)).length) throw new Error('Dev migrations are incomplete');
 }
 export async function assertEmpty(client) {
-  const tables=['product','client','capacity_group','customer_order','order_item','payment','refund','order_audit_event','order_capacity_allocation','order_creation_request','order_action_request','native_order_edit_context','report_entry','report_entry_change'];
+  const tables=['product','client','capacity_group','customer_order','order_item','payment','refund','order_audit_event','order_capacity_allocation','order_creation_request','order_action_request','native_order_edit_context','report_entry','report_entry_change','order_slip_task'];
   for(const table of tables) if((await client.query(`SELECT EXISTS(SELECT 1 FROM public.${table}) populated`)).rows[0].populated) throw new Error(`Expected empty business table: ${table}`);
 }
 

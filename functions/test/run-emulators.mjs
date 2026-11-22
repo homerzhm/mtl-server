@@ -38,6 +38,11 @@ try {
     'REPORT_RUNTIME_SERVICE_ACCOUNT=report-tests@demo-mtl.iam.gserviceaccount.com',
     'REPORT_REGION=northamerica-northeast1',
     `REPORT_LOCAL_DATABASE_URL=${url}`,
+    'SLIPS_SQL_INSTANCE=unused-emulator','SLIPS_SQL_USER=postgres','SLIPS_SQL_DATABASE=restaurant',
+    'SLIPS_RUNTIME_SERVICE_ACCOUNT=slips-tests@demo-mtl.iam.gserviceaccount.com',
+    'SLIPS_REGION=northamerica-northeast1','SLIPS_BUCKET=demo-mtl-order-slips',
+    'SLIPS_LLM_PROVIDER=vertex','SLIPS_OPENAI_MODEL=gpt-5.4-mini','SLIPS_OPENAI_SECRET=mtl-slips-openai',
+    `SLIPS_LOCAL_DATABASE_URL=${url}`,
   ].join('\n'));
   const config = join(directory,'firebase.json');
   await writeFile(config,JSON.stringify({dataconnect:{source:join(root,'dataconnect')},
@@ -47,6 +52,7 @@ try {
     FIREBASE_AUTH_EMULATOR_HOST:'127.0.0.1:9099', STAFF_LOCAL_DATABASE_URL:url,
     FIREBASE_DATACONNECT_POSTGRESQL_STRING:url, STAFF_SQL_INSTANCE:'unused-emulator', STAFF_SQL_USER:'postgres',
     STAFF_RUNTIME_SERVICE_ACCOUNT:'staff-tests@demo-mtl.iam.gserviceaccount.com', ORDERS_LOCAL_DATABASE_URL:url, REPORT_LOCAL_DATABASE_URL:url,
+    SLIPS_LOCAL_DATABASE_URL:url,
     CI:'true', FIREBASE_CLI_DISABLE_UPDATE_CHECK:'true'};
   // Optional CLI path lets developers use a current CLI with their native Node.
   const cli = process.env.MTL_FIREBASE_CLI;
