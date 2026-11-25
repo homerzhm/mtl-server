@@ -182,6 +182,9 @@ test('automatic roast schema stages columns and restores Report checks after int
   await client.query(await readFile(join(root,'migrations/automatic-roast-booking.sql'),'utf8'));
   const verifyBooking=await readFile(join(root,'migrations/verify-automatic-roast-booking.sql'),'utf8');
   assert.equal((await client.query(verifyBooking)).rows[0].ok,true);
+  await client.query(await readFile(join(root,'migrations/order-edit-price-override.sql'),'utf8'));
+  const verifyEditPrice=await readFile(join(root,'migrations/verify-order-edit-price-override.sql'),'utf8');
+  assert.equal((await client.query(verifyEditPrice)).rows[0].ok,true);
   await verifyContract(client,manifest);
   await verifyPermissions(client,parameters);
 });

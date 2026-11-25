@@ -99,6 +99,12 @@ test('edit validation permits saved snapshots but rejects duplicate IDs and unex
   const {depositRequiredCents,...v}=input();const edit={...v,action:'EDIT',requestId:randomUUID(),expectedRevision:3};
   delete edit.items[0].expectedRevision;
   assert.equal(validateEdit(edit).items[0].expectedRevision,null);
+  assert.equal(Object.hasOwn(validateEdit(edit),'priceOverride'),false);
+  for(const amountCents of [null,0,2147483647])
+    assert.deepEqual(validateEdit({...edit,priceOverride:{amountCents}}).priceOverride,{amountCents});
+  for(const priceOverride of [null,0,{},[],{amountCents:'100'},{amountCents:-1},{amountCents:0.1},
+      {amountCents:2147483648},{amountCents:100,extra:true}])
+    assert.throws(()=>validateEdit({...edit,priceOverride}),{code:'invalid-argument'});
   for(const patch of [{expectedRevision:-1},{items:[edit.items[0],edit.items[0]]},{discountCents:100},{requestId:'bad'}])
     assert.throws(()=>validateEdit({...edit,...patch}),{code:'invalid-argument'});
 });

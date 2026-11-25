@@ -122,6 +122,12 @@
       "file": "migrations/automatic-roast-booking.sql",
       "mode": "transaction",
       "verify": "migrations/verify-automatic-roast-booking.sql"
+    },
+    {
+      "id": "019-order-edit-price-override",
+      "file": "migrations/order-edit-price-override.sql",
+      "mode": "transaction",
+      "verify": "migrations/verify-order-edit-price-override.sql"
     }
   ],
   "checks": [

@@ -29,7 +29,7 @@ before(async()=>{
   const token=`${encode({alg:'none'})}.${encode({sub:actor.uid,aud:'demo-mtl',iss:'https://securetoken.google.com/demo-mtl',staff:true,firebase:{sign_in_provider:'google.com'},iat:Math.floor(Date.now()/1000),exp:Math.floor(Date.now()/1000)+3600})}.`;
   const r=await fetch('http://127.0.0.1:9399/v1/projects/demo-mtl/locations/northamerica-northeast1/services/restaurant/connectors/staff-admin:executeQuery',{method:'POST',headers:{'Content-Type':'application/json','x-firebase-auth-token':token},body:JSON.stringify({operationName:'ListOrders',variables:{}})});
   const result=await r.json();assert.equal(!result.errors?.length,true,JSON.stringify(result));
-  for(const migration of ['order-integrity.sql','order-paid-status.sql','order-capacity-booking.sql','order-actions.sql','payment-edits.sql','order-edits.sql','special-day-capacity.sql','mark-paid-with-balance.sql','historical-order-import.sql','automatic-roast-booking.sql'])await pool.query(await readFile(new URL(`../../../migrations/${migration}`,import.meta.url),'utf8'));
+  for(const migration of ['order-integrity.sql','order-paid-status.sql','order-capacity-booking.sql','order-actions.sql','payment-edits.sql','order-edits.sql','special-day-capacity.sql','mark-paid-with-balance.sql','historical-order-import.sql','automatic-roast-booking.sql','order-edit-price-override.sql'])await pool.query(await readFile(new URL(`../../../migrations/${migration}`,import.meta.url),'utf8'));
   await pool.query(await readFile(new URL('../../../migrations/mark-paid-with-balance.sql',import.meta.url),'utf8')); // Repeatable upgrade.
   assert.equal((await pool.query(await readFile(new URL('../../../migrations/verify-mark-paid-with-balance.sql',import.meta.url),'utf8'))).rows[0].ok,true);
   assert.equal((await pool.query('SELECT count(*)::int n FROM capacity_group')).rows[0].n,0);
@@ -563,6 +563,7 @@ test('database guards reject allocation bypasses and migration preserves explici
   await pool.query(await readFile(new URL('../../../migrations/order-edits.sql',import.meta.url),'utf8'));
   await pool.query(await readFile(new URL('../../../migrations/special-day-capacity.sql',import.meta.url),'utf8'));
   await pool.query(await readFile(new URL('../../../migrations/automatic-roast-booking.sql',import.meta.url),'utf8'));
+  await pool.query(await readFile(new URL('../../../migrations/order-edit-price-override.sql',import.meta.url),'utf8'));
   assert.deepEqual(await settings(),before);assert.deepEqual((await pool.query('SELECT * FROM capacity_group WHERE id=$1',[belly])).rows[0],group);
 });
 
@@ -738,6 +739,45 @@ test('edit preserves snapshots, reconciles before time checks, changes Paid and 
   await assert.rejects(edits.edit(actor,changed),{code:'invalid-argument'});
   assert.equal((await pool.query('SELECT revision FROM customer_order WHERE id=$1',[v.id])).rows[0].revision,notes.expectedRevision+1);
 });
+test('admin edit sets, changes and removes an override while preserving the ledger and legacy edits',async()=>{
+  const v=await currentInput();
+  v.scheduledFor='2030-10-05T18:00:00Z';
+  await service.create(actor,v);
+  const initial=await savedOrder(v.id);
+  const actions=new OrderActionService(pool), edits=new OrderEditService(pool);
+  const receipt=action(v.id,0,'PAYMENT',initial.subtotal_cents);
+  await actions.perform(actor,receipt);
+  const add=await editInput(v.id,{priceOverride:{amountCents:0}});
+  await assert.rejects(edits.edit(actor,add),/ORDER_PRICE_OVERRIDE_ADMIN/);
+  await edits.edit(admin,add);
+  assert.deepEqual(await edits.edit({...actor,uid:admin.uid},add),{id:v.id});
+  let saved=await savedOrder(v.id);
+  assert.equal(saved.price_override_cents,0);
+  assert.equal(saved.final_total_cents,0);
+  const legacy=await editInput(v.id,{notes:'Ordinary staff edit'});
+  await edits.edit(actor,legacy);
+  assert.equal((await savedOrder(v.id)).price_override_cents,0);
+  await actions.perform(actor,action(v.id,legacy.expectedRevision+1,'PAID'));
+  const increase=await editInput(v.id,{priceOverride:{amountCents:initial.subtotal_cents+100}});
+  await edits.edit(admin,increase);
+  saved=await savedOrder(v.id);
+  assert.equal(saved.status,'CONFIRMED');
+  assert.equal(saved.final_total_cents,initial.subtotal_cents+100);
+  const remove=await editInput(v.id,{priceOverride:{amountCents:null}});
+  await assert.rejects(edits.edit(actor,remove),/ORDER_PRICE_OVERRIDE_ADMIN/);
+  await edits.edit(admin,remove);
+  await assert.rejects(edits.edit(admin,{...remove,priceOverride:{amountCents:1}}),{code:'already-exists'});
+  saved=await savedOrder(v.id);
+  assert.equal(saved.price_override_cents,null);
+  assert.equal(saved.final_total_cents,initial.subtotal_cents);
+  assert.equal((await savedPayment(receipt.requestId)).amount_cents,initial.subtotal_cents);
+  const summary=(await query('FindStaffOrderByNumber',{number:saved.order_number})).staffOrderSummaries[0];
+  assert.equal(Number(summary.balanceCents),0);
+  const events=(await pool.query(`SELECT actor_uid,changes FROM order_audit_event
+    WHERE order_id=$1 AND action='ORDER_EDITED' ORDER BY order_revision`,[v.id])).rows;
+  assert.deepEqual(events.map(e=>[e.actor_uid,e.changes.before.price_override_cents,e.changes.after.price_override_cents]),
+    [[admin.uid,null,0],[actor.uid,0,0],[admin.uid,0,initial.subtotal_cents+100],[admin.uid,initial.subtotal_cents+100,null]]);
+});
 test('staff cancellation splits cash refunds, records retained charge, releases capacity and retries once',async()=>{
   const v=await currentInput();v.items[0].expectedRevision=(await pool.query('SELECT revision FROM product WHERE id=$1',[product])).rows[0].revision;
   v.scheduledFor='2030-11-01T18:00:00Z';await service.create(actor,v);
@@ -790,6 +830,7 @@ test('edit migration removes inherited SQL Connect private context and routine g
   await pool.query(await readFile(new URL('../../../migrations/order-edits.sql',import.meta.url),'utf8'));
   await pool.query(await readFile(new URL('../../../migrations/special-day-capacity.sql',import.meta.url),'utf8'));
   await pool.query(await readFile(new URL('../../../migrations/automatic-roast-booking.sql',import.meta.url),'utf8'));
+  await pool.query(await readFile(new URL('../../../migrations/order-edit-price-override.sql',import.meta.url),'utf8'));
   for(const role of ['firebasereader_restaurant_public','firebasewriter_restaurant_public']) {
     const result=(await pool.query(`SELECT
       has_table_privilege($1,'native_order_edit_context','SELECT,INSERT,UPDATE,DELETE,TRUNCATE,REFERENCES,TRIGGER') context,

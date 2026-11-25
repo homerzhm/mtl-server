@@ -8,9 +8,17 @@ import {requireOrderCaller, type OrderCaller} from './permissions';
 export function validateEdit(raw: unknown) {
   const v = raw as Record<string, unknown> | null;
   if (!v || typeof v !== 'object' || Array.isArray(v) || v.action !== 'EDIT' ||
-      Object.keys(v).some(k => !['action','requestId','id','expectedRevision','items','clientId','contactPhoneNumber','scheduledFor','expectedSettingsRevision','expectedGroups','allocations','notes'].includes(k)) ||
+      Object.keys(v).some(k => !['action','requestId','id','expectedRevision','items','clientId','contactPhoneNumber','scheduledFor','expectedSettingsRevision','expectedGroups','allocations','notes','priceOverride'].includes(k)) ||
       typeof v.requestId !== 'string' || !uuid.test(v.requestId) || !integer(v.expectedRevision,0,2147483646) || !Array.isArray(v.items))
     throw new HttpsError('invalid-argument','ORDER_EDIT_INVALID');
+  let priceOverride: {amountCents: number | null} | undefined;
+  if(Object.hasOwn(v,'priceOverride')) {
+    const change=v.priceOverride as Record<string,unknown> | null;
+    if(!change||typeof change!=='object'||Array.isArray(change)||Object.keys(change).length!==1||
+        !Object.hasOwn(change,'amountCents')||(change.amountCents!==null&&!integer(change.amountCents)))
+      throw new HttpsError('invalid-argument','ORDER_EDIT_INVALID');
+    priceOverride={amountCents:change.amountCents};
+  }
   const revisions = new Map<string, number | null>();
   const items = v.items.map((i: Record<string, unknown>) => {
     if (!i || typeof i !== 'object' || (i.expectedRevision != null && !integer(i.expectedRevision)))
@@ -22,7 +30,8 @@ export function validateEdit(raw: unknown) {
     scheduledFor:v.scheduledFor,expectedSettingsRevision:v.expectedSettingsRevision,expectedGroups:v.expectedGroups,
     allocations:v.allocations,notes:v.notes,depositRequiredCents:0});
   return {action:'EDIT' as const,requestId:v.requestId.toLowerCase(),expectedRevision:Number(v.expectedRevision),
-    ...input,items:input.items.map(i=>({...i,expectedRevision:revisions.get(i.id)!}))};
+    ...input,items:input.items.map(i=>({...i,expectedRevision:revisions.get(i.id)!})),
+    ...(priceOverride ? {priceOverride} : {})};
 }
 
 /** One atomic replacement. Native guards are relaxed only inside the restricted SQL routine. */
@@ -40,6 +49,8 @@ export class OrderEditService {
         if(prior.actor_uid!==actor.uid||prior.payload_hash!==hash) throw new HttpsError('already-exists','REQUEST_CONFLICT');
         await db.query('COMMIT');return {id:input.id};
       }
+      if(input.priceOverride && actor.token.admin!==true)
+        throw new HttpsError('permission-denied','ORDER_PRICE_OVERRIDE_ADMIN');
       await lockCapacity(db);
       const order=(await db.query('SELECT * FROM customer_order WHERE id=$1 FOR UPDATE',[input.id])).rows[0];
       if(!order||order.revision!==input.expectedRevision) throw new HttpsError('aborted','ORDER_CONFLICT');
@@ -121,15 +132,21 @@ export class OrderEditService {
       }
       const net=(await db.query(`SELECT COALESCE((SELECT sum(amount_cents) FROM payment WHERE order_id=$1 AND status='SUCCEEDED'),0)
         -COALESCE((SELECT sum(r.amount_cents) FROM refund r JOIN payment p ON p.id=r.payment_id WHERE p.order_id=$1 AND r.status='SUCCEEDED'),0) net`,[input.id])).rows[0].net;
-      const total=order.price_override_cents??(subtotal-order.discount_cents);
+      const override=input.priceOverride ? input.priceOverride.amountCents : order.price_override_cents;
+      const total=override??(subtotal-order.discount_cents);
       const status=order.status==='PAID'&&BigInt(net)<BigInt(total)?'CONFIRMED':order.status;
       const after={...order,subtotal_cents:subtotal,item_count:lines.length,scheduled_for:input.scheduledFor,
         client_id:input.clientId,contact_phone_number:input.contactPhoneNumber,notes:input.notes,
         roast_block_needed_reason:keepUnassigned?order.roast_block_needed_reason:null,
-        final_total_cents:order.final_total_cents===null?null:total,status,revision:order.revision+1};
+        price_override_cents:override,
+        final_total_cents:override===null&&order.final_total_cents===null?null:total,status,revision:order.revision+1};
       // The SQL routine owns the temporary privileged context, updates and exact-total checks.
       await db.query('SELECT public.apply_native_order_edit($1,$2,$3::jsonb,$4::jsonb,$5::jsonb)',
         [input.id,input.expectedRevision,JSON.stringify(after),JSON.stringify(lines),JSON.stringify(input.allocations)]);
+      if(input.priceOverride) {
+        const stored=(await db.query('SELECT price_override_cents FROM customer_order WHERE id=$1',[input.id])).rows[0];
+        if(stored?.price_override_cents!==override) throw new Error('Order edit price override migration required');
+      }
       await db.query(`INSERT INTO order_audit_event(id,order_id,action,actor_uid,occurred_at,order_revision,changes)
         VALUES($1,$2,'ORDER_EDITED',$3,now(),$4,$5::jsonb)`,[randomUUID(),input.id,actor.uid,after.revision,
         JSON.stringify({before:{...order,items:saved,allocations:own},after:{...after,items:lines,allocations:input.allocations}})]);
