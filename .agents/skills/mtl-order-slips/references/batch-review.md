@@ -38,7 +38,7 @@ The helper's JSON input is a **display manifest**, not an approved API payload:
 }
 ```
 
-The numbers above illustrate formatting only; calculate actual counts and sums from the selected batch manifest using integer cents. Run `node <skill>/scripts/render-batch-review.mjs /absolute/path/display.json /absolute/path/review.html`. The page deliberately has no write-capable confirmation button; final approval is requested in Codex after review.
+The numbers above illustrate formatting only; calculate actual counts and sums from the selected batch manifest using integer cents. Run `node <skill>/scripts/render-batch-review.mjs /absolute/path/display.json /absolute/path/review.html`. The page deliberately has no write-capable confirmation button; final approval is requested in the agent chat after review.
 
 ## One final confirmation
 

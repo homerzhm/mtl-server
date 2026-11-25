@@ -1,10 +1,12 @@
 # Firebase app operations
 
-Source of truth is the current server checkout, especially `docs/live-order-booking.md`, `dataconnect/staff-admin/{queries,clients-queries,orders-queries,booking-queries,mutations}.gql`, and `functions/src/orders/{handlers,booking,service,permissions}.ts`. Production is Toronto; older documentation may describe the Montréal Dev endpoint. No deployments are part of this workflow.
+Source of truth is the current server checkout, especially `docs/live-order-booking.md`, `dataconnect/staff-admin/{queries,clients-queries,orders-queries,booking-queries,mutations}.gql`, and `functions/src/orders/{handlers,booking,service,capacity,assignment,special-days,permissions}.ts`. Production is Toronto; older documentation may describe the Montréal Dev endpoint. No deployments are part of this workflow.
 
 ## Helper
 
-Use native Node 22. On this machine an available native binary is `/Users/hongmingzuo/.cache/codex-runtimes/codex-primary-runtime/dependencies/node/bin/node`; verify it still exists. The nvm v22.8.0 binary may fail with `Bad CPU type`.
+Paths in this skill use `~` for the home directory. The scripts do not expand `~`: environment variables (`MTL_FIREBASE_SESSION_FILE`, `MTL_FIREBASE_CLI`), `journalPath` and other paths inside request JSON must be absolute. Expand `~` first, for example with an unquoted `~` or `$HOME` in the shell (`export MTL_FIREBASE_CLI="$HOME/.nvm/..."`); never write a literal `~` into a variable value or JSON file.
+
+Use native Node 22. On this machine an available native binary was `~/.cache/codex-runtimes/codex-primary-runtime/dependencies/node/bin/node` (installed by Codex); verify it still exists, or use any other native arm64 Node 22 (`node -p process.arch` should print `arm64`). The nvm v22.8.0 binary may fail with `Bad CPU type`.
 
 Set `MTL_FIREBASE_SESSION_FILE` to an absolute private JSON file produced by a legitimate Firebase Google sign-in for the selected environment. Its fields are `projectId`, `apiKey` (the selected app's Firebase API key), and `idToken` (the current Firebase user ID token). The file must be owned by the current OS user with mode 0600. Never ask for credentials in chat; provide any session through a secure local app/login integration. Tokens expire: obtain a refreshed token from the signed-in app when needed, keeping the same Firebase actor UID for reconciliation. The request helper does not provision Google OAuth clients. For interactive sign-in, use the companion script below.
 
@@ -12,7 +14,7 @@ Set `MTL_FIREBASE_SESSION_FILE` to an absolute private JSON file produced by a l
 
 ### Interactive Google sign-in
 
-Set `MTL_FIREBASE_CLI` to the real installed `firebase-tools/lib/bin/firebase.js`; initially `/Users/hongmingzuo/.nvm/versions/node/v22.8.0/lib/node_modules/firebase-tools/lib/bin/firebase.js`. Run:
+Set `MTL_FIREBASE_CLI` to the real installed `firebase-tools/lib/bin/firebase.js`; initially `~/.nvm/versions/node/v22.8.0/lib/node_modules/firebase-tools/lib/bin/firebase.js`. Run:
 
 ```sh
 node <skill>/scripts/sign-in.mjs dev /absolute/private/path/sessions/dev.json
@@ -38,7 +40,7 @@ Run `node <skill>/scripts/firebase.mjs /absolute/path/request.json`. Request exa
 
 Every request needs an explicit environment. The helper prints data/actor metadata, never tokens. It requires an existing Google sign-in with Boolean Staff/Admin claims for `homerzhm@gmail.com`. If no session exists, ask for interactive sign-in setup and explain that live creation is blocked; the user may choose to finish the skill and set up authentication later. Do not ask the user to paste passwords or tokens into chat. Never alter roles or OAuth restrictions as part of slip processing.
 
-Writes require `approved: true` **only after actual user approval**, and an absolute `journalPath` in a private persistent directory outside the repo (for example `~/.codex/mtl-order-slips/journals/<environment>/<uuid>.json`, subject to filesystem permissions). One journal per client mutation or order request. Supply `retryAuthorized: true` only after reconciliation and explicit approval to retry. If a crash leaves a `.lock`, inspect the journal and running process first; do not blindly delete locks. Request JSON files contain personal data but no credentials; protect them with mode 0600. Same-journal requests cannot run concurrently.
+Writes require `approved: true` **only after actual user approval**, and an absolute `journalPath` in a private persistent directory outside the repo, always `~/.mtl-order-slips/` (`journals/<environment>/<uuid>.json`, plus `batches/`, `sessions/`, `drafts/` and `locks/`), whichever agent runs the skill. Data from the original `~/.codex/mtl-order-slips/` was migrated here on 2026-11-24 with stored paths rewritten; that old path is now a symlink to this folder, and the pre-migration copy is kept at `~/.codex/mtl-order-slips.backup-2026-11-24/` until the user approves deleting it. Write new files using the `~/.mtl-order-slips/` path. Keep using this one folder so earlier processing data stays available for duplicate checks, reconciliation and resume; do not create or move to another location unless the user explicitly asks for a move, and then follow the migration procedure below. One journal per client mutation or order request. Supply `retryAuthorized: true` only after reconciliation and explicit approval to retry. If a crash leaves a `.lock`, inspect the journal and running process first; do not blindly delete locks. Request JSON files contain personal data but no credentials; protect them with mode 0600. Same-journal requests cannot run concurrently.
 
 ```json
 {
@@ -65,7 +67,20 @@ Writes require `approved: true` **only after actual user approval**, and an abso
 }
 ```
 
-These are **illustrative values**, not a ready-to-submit order. Replace every UUID and revision from fresh selected-environment reads; confirm date, items, amounts and allocations through the preview. UUIDs must use lowercase canonical hyphenated form; SQL Connect responses may return 32 hexadecimal characters, which must be normalized before callable submission. `scheduledFor` is a future UTC ISO timestamp with zero seconds and milliseconds, representing a Toronto quarter-hour. For ungrouped items, `expectedGroups` and `allocations` are empty arrays, while settings revision is still required. Price/discount overrides and backdating receipt timestamps are unsupported. Deposits cannot exceed the current subtotal. At most 100 distinct products; quantities 1–99.
+These are **illustrative values**, not a ready-to-submit order. Replace every UUID and revision from fresh selected-environment reads; confirm date, items, amounts and allocations through the preview. UUIDs must use lowercase canonical hyphenated form; SQL Connect responses may return 32 hexadecimal characters, which must be normalized before callable submission. `scheduledFor` is a future UTC ISO timestamp with zero seconds and milliseconds, representing a Toronto quarter-hour. For ungrouped items, `expectedGroups` and `allocations` are empty arrays, while settings revision is still required. Discounts and backdating receipt timestamps are unsupported. Deposits cannot exceed the sell price (the current subtotal, or the agreed override).
+
+The automatic-mode variant, used only for an approved agreed-price entry by an Admin actor, replaces `expectedSettingsRevision`, `expectedGroups` and `allocations` with `"autoAssignRoastBlock":true` and adds `"priceOverrideCents":<agreed total>`. The server rejects a payload that mixes the two forms, an override without automatic mode, a non-Admin override, and automatic pickups before 10:00 a.m. Its retry hash covers the exact payload, so an uncertain request is never converted between forms. At most 100 distinct products; quantities 1–99.
+
+### Moving the private data folder
+
+A move must migrate all existing data; never start an empty folder and leave history behind. Batch manifests, journals and request files store absolute paths into the folder (`journalPath`, request files, image previews), so copying alone is not enough.
+
+1. Run no skill writes during the move. Stop if any `.lock` file exists or a journal is unresolved/uncertain; reconcile it first.
+2. Copy the whole folder (`batches/`, `journals/`, `sessions/`, `drafts/`, `locks/`) to the new location, preserving mode 0600 files and 0700 directories (`cp -Rp`). Do not delete the original yet.
+3. In the copy, replace every absolute old-folder path with the new path, in JSON values only, keeping files otherwise byte-identical. Never print file contents; they hold personal data and session tokens.
+4. Verify: identical file counts and relative names, no remaining references to the old path, every JSON file still parses, every referenced path exists under the new folder, and permissions are still private.
+5. Replace the original folder with a symlink to the new one, so any path recorded elsewhere still resolves. Keep the original as a renamed private backup until the user approves deleting it.
+6. Update this document's folder path in the same change, and report file counts and verification results.
 
 ## Read operations and pagination
 
@@ -78,14 +93,14 @@ Connector service `restaurant`, connector `staff-admin`. Queries return named Gr
 | GetOrdersByPhoneNumber | phoneNumber, offset | Phone snapshot orders, including missing/mismatched client links |
 | ListProducts | offset | Live product IDs, names, CAD cents, revisions, activity and group links |
 | GetProduct | id | Refresh matched product |
-| GetOrder | id | Full order and financial summary |
+| GetOrder | id | Full order and financial summary, `roastBlockNeededReason` and `priceOverrideCents` |
 | ListOrderItems | id (order UUID), offset | Saved products, quantity and price snapshots |
 | ListOrderPayments | id, offset | Actual receipts and status |
 | ListOrderRefunds | id, offset | Successful refunds affecting net paid |
 | ListOrderCapacityAllocations | id, offset | Saved group blocks and quantities |
 | ListOrderAuditEvents | id, offset | Audit verification/reconciliation |
 
-Callable `getBookingAvailability({day, offset})` returns settings, blocks with group revisions and decimal-string capacity counts, and nextOffset. Callable `createStaffOrder(payload)` returns `{id}` for a future booking. Both require a verified Firebase Google Staff/Admin user. Historical mode uses the separate Admin-only `importHistoricalOrder` callable and the [historical workflow](historical.md). Do not invoke `updateStaffOrder` to silently correct mismatched slips.
+Callable `getBookingAvailability({day, offset})` returns settings, blocks with group revisions and decimal-string capacity counts (effective special-day limits), and nextOffset. Callable `createStaffOrder(payload)` returns `{id}` for a future booking. Both require a verified Firebase Google Staff/Admin user. Historical mode uses the separate Admin-only `importHistoricalOrder` callable and the [historical workflow](historical.md). Do not invoke `updateStaffOrder` to silently correct mismatched slips.
 
 ## Protocol references
 
@@ -93,6 +108,6 @@ Callable `getBookingAvailability({day, offset})` returns settings, blocks with g
 - [Google provider sign-in](https://cloud.google.com/identity-platform/docs/reference/rest/v1/accounts/signInWithIdp): use a legitimate provider credential whose OAuth audience is accepted by the selected Firebase project. CLI OAuth tokens failed this check in initial Dev testing.
 - [Execute connector query](https://firebase.google.com/docs/reference/sql-connect/rest/v1/projects.locations.services.connectors/executeQuery) and [mutation](https://firebase.google.com/docs/reference/sql-connect/rest/v1/projects.locations.services.connectors/executeMutation): use deployed operationName and variables, app API key, and `x-firebase-auth-token`. Never use `impersonate` or admin GraphQL execution to simulate an app user.
 
-## Initial Dev read test
+## Initial Dev read test (2026-11-16)
 
-For the provided 70LB slip, the exact phone lookup and phone-order lookup returned no rows. Availability for November 29, 2026 showed an 11:00 Lechon block with 18 places remaining. Dev's current 70LB price was CAD $300 while the slip total was $320, so the workflow correctly stopped for price review before any client/order/receipt write. These are test observations, not fixtures; always read current data.
+A 70LB slip test found no client or phone orders, room in the 11:00 Lechon block, and a catalog price below the slip total, so the workflow correctly stopped for price review before any write. Catalog, capacity and booking behavior have changed since; never reuse these observations.
