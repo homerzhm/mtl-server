@@ -13,6 +13,8 @@ type Order @table(name: "customer_order", key: ["id"])
   fulfillmentType: String! @default(value: "PICKUP")
   # CONFIRMED, PAID (manual staff confirmation), COMPLETED, CANCELLED.
   status: String! @default(value: "CONFIRMED")
+  roastBlockNeededReason: String
+  priceOverrideCents: Int
   bookingManaged: Boolean! @default(value: false)
   scheduledFor: Timestamp
   notes: String

@@ -2,7 +2,7 @@ import {test} from 'node:test';
 import assert from 'node:assert/strict';
 import {readFile} from 'node:fs/promises';
 import {join} from 'node:path';
-import {options,target,validateParameters,parseEnv,firebaseArgs,firebaseConfig,json,root,assertExports,loadManifest} from '../../scripts/release/config.mjs';
+import {options,target,validateParameters,parseEnv,firebaseArgs,firebaseConfig,json,root,assertExports,loadManifest,slipFunctions,slipSettings} from '../../scripts/release/config.mjs';
 import {transactionBody} from '../../scripts/release/database.mjs';
 import {cleanCommit} from '../../scripts/release/cli.mjs';
 import {verifyCloud} from '../../scripts/release/cloud.mjs';
@@ -30,13 +30,22 @@ test('generated environment configurations share all sources and function settin
   }
 });
 function parameters(t) {
-  return Object.fromEntries(['STAFF','ORDERS','REPORT'].flatMap(topic=>{
+  const base=Object.fromEntries(['STAFF','ORDERS','REPORT','SLIPS'].flatMap(topic=>{
     const email=`mtl-${topic.toLowerCase()}-functions@${t.project}.iam.gserviceaccount.com`;
     return [[`${topic}_REGION`,t.functionsRegion],[`${topic}_SQL_INSTANCE`,t.connection],[`${topic}_SQL_DATABASE`,'restaurant'],[`${topic}_RUNTIME_SERVICE_ACCOUNT`,email],[`${topic}_SQL_USER`,email.replace('.gserviceaccount.com','')]];
   }));
+  return {...base,SLIPS_BUCKET:`${t.project}-order-slips`,SLIPS_LLM_PROVIDER:'vertex',
+    SLIPS_OPENAI_MODEL:'gpt-5.4-mini',SLIPS_OPENAI_SECRET:'mtl-slips-openai'};
 }
 test('cloud parameter validation rejects cross-project identities, local URLs, missing settings and shared identities',async()=>{
   const t=await target('production'),p=parameters(t);assert.deepEqual(validateParameters(t,p),p);
+  const dev=await target('dev'), devParameters={...parameters(dev),SLIPS_VERTEX_LOCATION:'us',SLIPS_VERTEX_REQUEST_TYPE:'shared'};
+  assert.deepEqual(validateParameters(dev,devParameters),devParameters);
+  const deepSeekParameters={...devParameters,SLIPS_LLM_PROVIDER:'deepseek',SLIPS_DEEPSEEK_SECRET:'dev-deepseek-key'};
+  assert.deepEqual(validateParameters(dev,deepSeekParameters),deepSeekParameters);
+  assert.throws(()=>validateParameters(dev,{...deepSeekParameters,SLIPS_DEEPSEEK_SECRET:'projects/another-project/secrets/key'}),/SLIPS provider or storage/);
+  assert.throws(()=>validateParameters(t,{...p,SLIPS_VERTEX_REQUEST_TYPE:'shared'}),/Vertex serving parameters/);
+  assert.throws(()=>validateParameters(dev,{...devParameters,SLIPS_VERTEX_LOCATION:'invalid'}),/Vertex serving parameters/);
   for(const bad of [{...p,ORDERS_SQL_INSTANCE:(await target('dev')).connection},{...p,STAFF_RUNTIME_SERVICE_ACCOUNT:'staff@mtl-service-e3e0c.iam.gserviceaccount.com'},
     {...p,ORDERS_LOCAL_DATABASE_URL:'postgresql://127.0.0.1/db'},{...p,STAFF_SQL_DATABASE:undefined},{...p,STAFF_REGION:'northamerica-northeast1'},
     {...p,ORDERS_RUNTIME_SERVICE_ACCOUNT:p.STAFF_RUNTIME_SERVICE_ACCOUNT,ORDERS_SQL_USER:p.STAFF_SQL_USER}]) assert.throws(()=>validateParameters(t,bad));
@@ -98,28 +107,47 @@ test('full cloud verification checks identities, scheduler and backups without f
   const schema={source:{files:await files('dataconnect/schema')},datasources:[{postgresql:{database:'restaurant',schemaValidation:'COMPATIBLE',cloudSql:{instance:`projects/${t.project}/locations/${t.region}/instances/${t.instance}`}}}]};
   const connector={source:{files:await files('dataconnect/staff-admin')}};
   const functionResources=functionNames.map(name=>{
-    const staff=['registerStaffSignIn','setStaffRoles','reconcileStaffRoles'].includes(name),topic=staff?'STAFF':name==='manageReportEntries'?'REPORT':'ORDERS';
+    const staff=['registerStaffSignIn','setStaffRoles','reconcileStaffRoles'].includes(name);
+    const slips=slipFunctions.includes(name),topic=staff?'STAFF':slips?'SLIPS':name==='manageReportEntries'?'REPORT':'ORDERS';
     return {name:`projects/${t.project}/locations/${t.functionsRegion}/functions/${name}`,labels:{'firebase-functions-codebase':'server'},state:'ACTIVE',updateTime:'2026-11-16T00:00:00Z',buildConfig:{runtime:'nodejs22'},
-      serviceConfig:{uri:`https://${name.toLowerCase()}-example.run.app`,serviceAccountEmail:p[`${topic}_RUNTIME_SERVICE_ACCOUNT`],maxInstanceCount:1,maxInstanceRequestConcurrency:2,timeoutSeconds:staff?120:60,
-        environmentVariables:Object.fromEntries(['SQL_INSTANCE','SQL_USER','SQL_DATABASE','REGION'].map(suffix=>[`${topic}_${suffix}`,p[`${topic}_${suffix}`]]))}};
+      serviceConfig:{service:`projects/${t.project}/locations/${t.functionsRegion}/services/${name.toLowerCase()}`,uri:`https://${name.toLowerCase()}-example.run.app`,serviceAccountEmail:p[`${topic}_RUNTIME_SERVICE_ACCOUNT`],maxInstanceCount:1,maxInstanceRequestConcurrency:2,timeoutSeconds:staff||['processOrderSlipTask','reconcileOrderSlipTasks'].includes(name)?120:60,
+        environmentVariables:Object.fromEntries(['SQL_INSTANCE','SQL_USER','SQL_DATABASE','REGION',...(slips?slipSettings:[])].map(suffix=>[`${topic}_${suffix}`,p[`${topic}_${suffix}`]]))}};
   });
-  let attempts=0,schedulerTarget='https://reconcilestaffroles-example.run.app/';
+  let attempts=0,bucketSoftDelete='0',workerPublic=false,schedulerTarget='https://reconcilestaffroles-example.run.app/';
   const instance={connectionName:t.connection,region:t.region,state:'RUNNABLE',databaseVersion:'POSTGRES_18',settings:{databaseFlags:[{name:'cloudsql.iam_authentication',value:'on'}],backupConfiguration:{enabled:true,pointInTimeRecoveryEnabled:true}}};
-  const get=async url=>{
+  const get=async (url,method)=>{
     if(url.endsWith('/schemas/main')){assert.ok(url.includes('/locations/northamerica-northeast2/'));return schema;}
     if(url.endsWith('/connectors/staff-admin'))return connector;
     if(url.endsWith('/functions')){assert.ok(url.includes('/locations/northamerica-northeast2/'));return {functions:functionResources};}
+    if(url.includes('cloudtasks')&&url.endsWith(':getIamPolicy')) {
+      assert.equal(method,'POST');
+      return {bindings:[{role:'roles/cloudtasks.enqueuer',members:[`serviceAccount:${p.SLIPS_RUNTIME_SERVICE_ACCOUNT}`]}]};
+    }
+    if(url.includes('cloudtasks'))return {name:`projects/${t.project}/locations/${t.functionsRegion}/queues/processOrderSlipTask`,state:'RUNNING',
+      rateLimits:{maxConcurrentDispatches:2,maxDispatchesPerSecond:2},retryConfig:{maxAttempts:5,minBackoff:'15s',maxBackoff:'60s'}};
+    if(url.includes('run.googleapis'))return {bindings:[{role:'roles/run.invoker',members:workerPublic?['allUsers']:[`serviceAccount:${p.SLIPS_RUNTIME_SERVICE_ACCOUNT}`]}]};
+    if(url.includes('storage.googleapis'))return {softDeletePolicy:{retentionDurationSeconds:bucketSoftDelete},name:p.SLIPS_BUCKET,location:t.functionsRegion.toUpperCase(),
+      iamConfiguration:{publicAccessPrevention:'enforced',uniformBucketLevelAccess:{enabled:true}},
+      lifecycle:{rule:[{action:{type:'Delete'},condition:{age:30}}]}};
+    if(url.includes('reconcileOrderSlipTasks'))return {name:'slip-scheduler',state:'ENABLED',schedule:'every 1 minutes',
+      httpTarget:{uri:'https://reconcileordersliptasks-example.run.app/',httpMethod:'POST',oidcToken:{serviceAccountEmail:p.SLIPS_RUNTIME_SERVICE_ACCOUNT}}};
     if(url.includes('cloudscheduler'))return {name:'scheduler',state:'ENABLED',schedule:'every 1 minutes',lastAttemptTime:`run-${++attempts}`,httpTarget:{uri:schedulerTarget,httpMethod:'POST',oidcToken:{serviceAccountEmail:p.STAFF_RUNTIME_SERVICE_ACCOUNT}}};
     if(url.includes('sqladmin'))return instance;
     assert.fail(url);
   };
   const first=await verifyCloud(t,p,'all',get);assert.equal(await verifyCloud(t,p,'all',get),first);
+  const worker=functionResources.find(resource=>resource.name.endsWith('/processOrderSlipTask'));
+  worker.serviceConfig.environmentVariables.SLIPS_VERTEX_LOCATION='us';
+  await assert.rejects(verifyCloud(t,p,'all',get),/Function parameters differ: processOrderSlipTask/);
+  delete worker.serviceConfig.environmentVariables.SLIPS_VERTEX_LOCATION;
   schedulerTarget=`https://${t.functionsRegion}-${t.project}.cloudfunctions.net/reconcileStaffRoles`;
   await verifyCloud(t,p,'all',get);
   schedulerTarget='https://attacker.example/reconcileStaffRoles';await assert.rejects(verifyCloud(t,p,'all',get),/scheduler differs/);
   schedulerTarget=`https://${t.functionsRegion}-${t.project}.cloudfunctions.net/reconcileStaffRoles`;
   instance.settings.backupConfiguration.pointInTimeRecoveryEnabled=false;
   await assert.rejects(verifyCloud(t,p,'all',get),/backups/);instance.settings.backupConfiguration.pointInTimeRecoveryEnabled=true;
+  bucketSoftDelete='604800';await assert.rejects(verifyCloud(t,p,'all',get),/bucket policy differs/);bucketSoftDelete='0';
+  workerPublic=true;await assert.rejects(verifyCloud(t,p,'all',get),/invoker policy differs/);workerPublic=false;
   functionResources[0].serviceConfig.serviceAccountEmail='wrong@another-project.iam.gserviceaccount.com';
   await assert.rejects(verifyCloud(t,p,'all',get),/runtime mismatch/);
 });

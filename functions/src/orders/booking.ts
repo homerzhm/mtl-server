@@ -5,7 +5,7 @@ export type CreateInput = {
   id: string; items: {id:string; productId:string; expectedRevision:number; quantity:number}[];
   clientId: string | null; contactPhoneNumber: string | null; scheduledFor: string;
   expectedSettingsRevision: number; expectedGroups: {id:string; expectedRevision:number}[];
-  allocations: {groupId:string; blockMinute:number; quantity:number}[]; depositRequiredCents:number; notes:string | null; depositReceivedCents?:number;
+  allocations: {groupId:string; blockMinute:number; quantity:number}[]; depositRequiredCents:number; notes:string | null; depositReceivedCents?:number; autoAssignRoastBlock?:true; priceOverrideCents?:number;
 };
 export const uuid = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 export const integer = (v:unknown, min=0, max=2147483647): v is number => Number.isInteger(v) && Number(v)>=min && Number(v)<=max;
@@ -18,8 +18,15 @@ export function localParts(date:Date) {
 }
 export function validateInput(value:unknown): CreateInput {
   if(!value || typeof value!=='object'||Array.isArray(value)) invalid();
-  const v=value as CreateInput;
-  keys(v,['id','items','clientId','contactPhoneNumber','scheduledFor','allocations','expectedSettingsRevision','expectedGroups','depositRequiredCents','notes','depositReceivedCents']);
+  let v=value as CreateInput;
+  const automatic = Object.hasOwn(v,'autoAssignRoastBlock');
+  const hasOverride = Object.hasOwn(v,'priceOverrideCents');
+  if (automatic) {
+    if (v.autoAssignRoastBlock!==true || ['allocations','expectedSettingsRevision','expectedGroups'].some(key=>Object.hasOwn(v,key))) invalid();
+    v={...v,allocations:[],expectedSettingsRevision:0,expectedGroups:[]};
+  }
+  if (hasOverride && (!automatic || !integer(v.priceOverrideCents))) invalid();
+  keys(v,['id','items','clientId','contactPhoneNumber','scheduledFor','allocations','expectedSettingsRevision','expectedGroups','depositRequiredCents','notes','depositReceivedCents','autoAssignRoastBlock','priceOverrideCents']);
   if(typeof v.id!=='string'||!uuid.test(v.id)||!Array.isArray(v.items)||!v.items.length||v.items.length>100||
     !Array.isArray(v.allocations)||v.allocations.length>9600||!integer(v.expectedSettingsRevision)||!Array.isArray(v.expectedGroups)||v.expectedGroups.length>100||!integer(v.depositRequiredCents)||
     (v.clientId!==null&&(typeof v.clientId!=='string'||!uuid.test(v.clientId)))||
@@ -50,8 +57,18 @@ export function validateInput(value:unknown): CreateInput {
     groupIds.add(g.id.toLowerCase());
     return {id:g.id.toLowerCase(),expectedRevision:g.expectedRevision};
   }).sort((a,b)=>a.id.localeCompare(b.id));
+  const allocations=validateAllocations(v.allocations);
+  return {id:v.id.toLowerCase(),items,clientId:v.clientId?.toLowerCase()??null,contactPhoneNumber:phone,
+    scheduledFor:new Date(v.scheduledFor).toISOString(),allocations,expectedSettingsRevision:v.expectedSettingsRevision,expectedGroups,depositRequiredCents:v.depositRequiredCents,notes:v.notes,
+    // Omit absent fields, preserving the exact canonical JSON/hash of legacy retries.
+    ...(hasReceived ? {depositReceivedCents:v.depositReceivedCents} : {}),
+    ...(automatic ? {autoAssignRoastBlock:true as const} : {}),
+    ...(hasOverride ? {priceOverrideCents:v.priceOverrideCents} : {})};
+}
+export function validateAllocations(value:unknown): CreateInput['allocations'] {
+  if (!Array.isArray(value) || value.length>9600) invalid();
   const slots=new Set<string>();
-  const allocations=v.allocations.map(a=>{
+  return value.map(a=>{
     if(!a||typeof a!=='object'||Array.isArray(a)) invalid();
     keys(a,['groupId','blockMinute','quantity']);
     if(typeof a.groupId!=='string'||!uuid.test(a.groupId)||!integer(a.blockMinute,0,1439)||a.blockMinute%15!==0||!integer(a.quantity,1)) invalid();
@@ -59,14 +76,20 @@ export function validateInput(value:unknown): CreateInput {
     if(slots.has(slot)) invalid();
     slots.add(slot);return {groupId,blockMinute:a.blockMinute,quantity:a.quantity};
   }).sort((a,b)=>a.groupId.localeCompare(b.groupId)||a.blockMinute-b.blockMinute);
-  return {id:v.id.toLowerCase(),items,clientId:v.clientId?.toLowerCase()??null,contactPhoneNumber:phone,
-    scheduledFor:new Date(v.scheduledFor).toISOString(),allocations,expectedSettingsRevision:v.expectedSettingsRevision,expectedGroups,depositRequiredCents:v.depositRequiredCents,notes:v.notes,
-    // Omit absent fields, preserving the exact canonical JSON/hash of legacy retries.
-    ...(hasReceived ? {depositReceivedCents:v.depositReceivedCents} : {})};
 }
+
+export function matchingBlock(blocks: readonly number[], pickupMinute: number): number | undefined {
+  return [...blocks].reverse().find(block => block<=pickupMinute) ?? blocks[0];
+}
+
+export function blockHasStarted(day: string, minute: number, now: Date): boolean {
+  const current=localParts(now);
+  return day<current.day || (day===current.day && minute<=current.minute);
+}
+
 export function validateTiming(input:CreateInput, now:Date) {
   const pickup=new Date(input.scheduledFor), p=localParts(pickup), n=localParts(now);
-  if(pickup<=now||p.second!==0||pickup.getUTCMilliseconds()!==0||p.minute%15!==0||
+  if(pickup<=now||p.second!==0||pickup.getUTCMilliseconds()!==0||p.minute%15!==0||(input.autoAssignRoastBlock && p.minute<600)||
     input.allocations.some(a=>a.blockMinute>p.minute||(p.day===n.day&&a.blockMinute<=n.minute))) {
     throw new HttpsError('failed-precondition','PICKUP_EXPIRED');
   }

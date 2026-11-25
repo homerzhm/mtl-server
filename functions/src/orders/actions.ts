@@ -1,6 +1,7 @@
 import {createHash, randomUUID} from 'node:crypto';
 import {HttpsError} from 'firebase-functions/v2/https';
 import type {Pool} from 'pg';
+import {assignRoastBlock, validateRoastAssignment} from './assignment';
 import {OrderEditService} from './edits';
 import {lockCapacity} from './capacity';
 import {requireOrderActionCaller, type OrderCaller} from './permissions';
@@ -34,7 +35,9 @@ export class OrderActionService {
   async perform(caller: OrderCaller | undefined, raw: unknown) {
     const actor = requireOrderActionCaller(caller, raw);
     if ((raw as {action?: unknown} | null)?.action === 'EDIT') return new OrderEditService(this.pool).edit(actor, raw);
-    const input = validateAction(raw);
+    const assignment = (raw as {action?: unknown} | null)?.action === 'ASSIGN_ROAST_BLOCK'
+      ? validateRoastAssignment(raw) : null;
+    const input = assignment ?? validateAction(raw);
     const hash = createHash('sha256').update(JSON.stringify(input)).digest('hex');
     const db = await this.pool.connect();
     try {
@@ -50,6 +53,12 @@ export class OrderActionService {
       const result = await db.query('SELECT * FROM customer_order WHERE id=$1 FOR UPDATE',[input.id]);
       const order = result.rows[0];
       if (!order || order.revision !== input.expectedRevision) throw new HttpsError('aborted','ORDER_CONFLICT');
+      if (input.action==='ASSIGN_ROAST_BLOCK') {
+        await assignRoastBlock(db, actor, input, order);
+        await db.query('INSERT INTO order_action_request(id,actor_uid,payload_hash) VALUES($1,$2,$3)',[input.requestId,actor.uid,hash]);
+        await db.query('COMMIT');
+        return {id:input.id};
+      }
       let beforePayment: unknown = null;
       const before = {status:order.status,finalTotalCents:order.final_total_cents,
         completedAt:order.completed_at?.toISOString() ?? null,

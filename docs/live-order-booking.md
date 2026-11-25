@@ -568,3 +568,40 @@ Verified its new revision is ACTIVE with the dedicated ORDERS identity,
 maxInstances 1 and concurrency 2. Anonymous requests return 401 UNAUTHENTICATED;
 the other six functions are unchanged. Verification performed no live payment,
 refund or order lifecycle writes.
+
+## Automatic roast booking for new orders
+
+New Staff clients pass `autoAssignRoastBlock: true` to `createStaffOrder`
+and omit allocations and booking configuration revisions. Legacy creation
+requests retain their existing payload, validation, and retry hash. New
+requests can pass `priceOverrideCents` only with the Boolean Admin claim.
+The price is stored as the agreed total and stays fixed through item edits.
+Deposits are validated against the sell price and keep the same cash-receipt
+and order lifecycle rules.
+
+Toronto pickup starts at 10:00 AM in 15-minute steps. The callable chooses the
+latest block at or before pickup, with the first block used for earlier
+pickups. It books all required capacity groups there or saves a managed order
+with zero allocations and a reason. If the selected block starts during
+creation, the order and any receipt are saved with `BLOCK_STARTED` and zero
+allocations. It uses effective special-day limits. An edit can reduce an
+existing allocation while keeping the saved pickup.
+`ASSIGN_ROAST_BLOCK` on `updateStaffOrder` takes order and request UUIDs,
+the loaded revision, and complete group/place quantities. It validates future
+blocks on the saved pickup day and atomically clears the reason. The same-day
+assignment may use blocks after pickup and preserves the stored pickup time.
+The agenda and detail expose the reason, and the Plan Sheet uses actual
+allocations.
+
+Release this with the managed server command after reviewing the additive
+schema diff. Migration 017 stages the nullable columns and the Orders role’s
+single new column grant. It registers the schema through the existing guarded
+compatibility procedure for Orders, Report, and order-slip tasks. It pauses
+writes while native checks are temporarily removed and restores the checks and
+write access after registration or a registration failure. Retry an interrupted
+release through the same managed command to restore saved constraint definitions.
+Migration 018 installs the allocation checks and
+preserves explicitly overridden totals in the edit routine. Deploy the
+connector and callables before distributing the updated Staff app. Verify a
+10:00 AM order with room, a flagged order on a full block, and the change in
+the Plan Sheet after manual assignment in dev before promoting.

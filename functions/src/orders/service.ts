@@ -2,7 +2,7 @@ import {createHash, randomUUID} from 'node:crypto';
 import {HttpsError} from 'firebase-functions/v2/https';
 import type {Pool} from 'pg';
 import {lockCapacity} from './capacity';
-import {validateInput, validateTiming} from './booking';
+import {blockHasStarted, matchingBlock, validateInput, validateTiming} from './booking';
 
 import {requireOrderCaller, type OrderCaller} from './permissions';
 export {requireOrderCaller, type OrderCaller} from './permissions';
@@ -22,10 +22,12 @@ export class OrderCreationService {
         if(prior.rows[0].actor_uid!==actor.uid||prior.rows[0].payload_hash!==hash) throw new HttpsError('already-exists','REQUEST_CONFLICT');
         await db.query('COMMIT');return {id:input.id};
       }
+      if(input.priceOverrideCents!==undefined && actor.token.admin!==true)
+        throw new HttpsError('permission-denied','ORDER_PRICE_OVERRIDE_ADMIN');
       const pickup=validateTiming(input,this.now());
       await lockCapacity(db);
       const settings=(await db.query("SELECT block_minutes,revision FROM booking_settings WHERE id='default'")).rows[0];
-      if(!settings||settings.revision!==input.expectedSettingsRevision) throw new HttpsError('failed-precondition','BOOKING_CONFIGURATION_CHANGED');
+      if(!input.autoAssignRoastBlock&&(!settings||settings.revision!==input.expectedSettingsRevision)) throw new HttpsError('failed-precondition','BOOKING_CONFIGURATION_CHANGED');
       // The narrowly granted helper takes row locks without granting table UPDATE.
       await db.query('SELECT public.lock_order_creation_sources($1::uuid[], $2::uuid)',
         [input.items.map(i=>i.productId),input.clientId]);
@@ -38,34 +40,58 @@ export class OrderCreationService {
         subtotal+=p.price_cents*item.quantity;
         if(p.capacity_group_id) required.set(p.capacity_group_id,(required.get(p.capacity_group_id)??0)+item.quantity);
       }
-      if(!Number.isSafeInteger(subtotal)||subtotal<0||subtotal>2147483647||input.depositRequiredCents>subtotal||(input.depositReceivedCents??0)>subtotal) throw new HttpsError('invalid-argument','Check items, allocation and deposit');
+      const sellPrice=input.priceOverrideCents??subtotal;
+      if(!Number.isSafeInteger(subtotal)||subtotal<0||subtotal>2147483647||input.depositRequiredCents>sellPrice||(input.depositReceivedCents??0)>sellPrice) throw new HttpsError('invalid-argument','Check items, allocation and deposit');
       if(input.clientId) {
         const client=await db.query('SELECT id FROM client WHERE id=$1',[input.clientId]);
         if(!client.rowCount) throw new HttpsError('failed-precondition','CLIENT_UNAVAILABLE');
       }
       const groups=(await db.query('SELECT id,name,archived,revision,public.effective_block_capacity(id,$2,capacity_per_block) AS effective_capacity FROM capacity_group WHERE id=ANY($1::uuid[])',[Array.from(required.keys()),pickup.day])).rows;
-      if(input.expectedGroups.length!==required.size||input.expectedGroups.some(g=>!required.has(g.id)))
-        throw new HttpsError('invalid-argument','Check expected groups');
-      for(const [id,quantity] of required) {
-        const group=groups.find(g=>g.id===id);
-        if(!group||group.archived||group.revision!==input.expectedGroups.find(g=>g.id===id)?.expectedRevision)
-          throw new HttpsError('failed-precondition','BOOKING_CONFIGURATION_CHANGED');
-        if(input.allocations.filter(a=>a.groupId===id).reduce((n,a)=>n+a.quantity,0)!==quantity)
-          throw new HttpsError('invalid-argument','Check group allocations');
-      }
-      if(input.allocations.some(a=>!required.has(a.groupId)||!settings.block_minutes.includes(a.blockMinute)))
-        throw new HttpsError('invalid-argument','Check group allocations');
       const booked=await db.query("SELECT a.group_id,a.block_minute,sum(a.quantity)::bigint AS quantity FROM order_capacity_allocation a JOIN customer_order o ON o.id=a.order_id WHERE a.pickup_day=$1 AND o.status<>'CANCELLED' GROUP BY a.group_id,a.block_minute",[pickup.day]);
-      for(const a of input.allocations) {
-        const used=booked.rows.find(b=>b.group_id===a.groupId&&b.block_minute===a.blockMinute)?.quantity??'0';
-        if(BigInt(used)+BigInt(a.quantity)>BigInt(groups.find(g=>g.id===a.groupId)!.effective_capacity))
-          throw new HttpsError('resource-exhausted','GROUP_CAPACITY');
+      let allocations=input.allocations;
+      let roastBlockNeededReason: string | null=null;
+      if(input.autoAssignRoastBlock) {
+        if(groups.length!==required.size || groups.some(g=>g.archived))
+          throw new HttpsError('failed-precondition','CATALOG_CHANGED');
+        if(required.size) {
+          const block=matchingBlock(settings?.block_minutes??[],pickup.minute);
+          if(block===undefined) roastBlockNeededReason='NO_BLOCK';
+          else if(blockHasStarted(pickup.day,block,this.now())) roastBlockNeededReason='BLOCK_STARTED';
+          else if(groups.some(g=>{
+            const used=booked.rows.find(b=>b.group_id===g.id&&b.block_minute===block)?.quantity??'0';
+            return BigInt(used)+BigInt(required.get(g.id)!)>BigInt(g.effective_capacity);
+          })) roastBlockNeededReason='BLOCK_FULL';
+          else allocations=Array.from(required,([groupId,quantity])=>({groupId,blockMinute:block,quantity}));
+        }
+      } else {
+        if(input.expectedGroups.length!==required.size||input.expectedGroups.some(g=>!required.has(g.id)))
+          throw new HttpsError('invalid-argument','Check expected groups');
+        for(const [id,quantity] of required) {
+          const group=groups.find(g=>g.id===id);
+          if(!group||group.archived||group.revision!==input.expectedGroups.find(g=>g.id===id)?.expectedRevision)
+            throw new HttpsError('failed-precondition','BOOKING_CONFIGURATION_CHANGED');
+          if(input.allocations.filter(a=>a.groupId===id).reduce((n,a)=>n+a.quantity,0)!==quantity)
+            throw new HttpsError('invalid-argument','Check group allocations');
+        }
+        if(input.allocations.some(a=>!required.has(a.groupId)||!settings.block_minutes.includes(a.blockMinute)))
+          throw new HttpsError('invalid-argument','Check group allocations');
+        for(const a of input.allocations) {
+          const used=booked.rows.find(b=>b.group_id===a.groupId&&b.block_minute===a.blockMinute)?.quantity??'0';
+          if(BigInt(used)+BigInt(a.quantity)>BigInt(groups.find(g=>g.id===a.groupId)!.effective_capacity))
+            throw new HttpsError('resource-exhausted','GROUP_CAPACITY');
+        }
+      }
+      // Recheck timing after lock acquisition and before any inserts.
+      validateTiming(input,this.now());
+      if(input.autoAssignRoastBlock && allocations.some(a=>blockHasStarted(pickup.day,a.blockMinute,this.now()))) {
+        allocations=[];
+        roastBlockNeededReason='BLOCK_STARTED';
       }
       let inserted=false;
       for(let attempt=0;attempt<10;attempt++) {
-        const result=await db.query(`INSERT INTO customer_order (id,order_number,client_id,contact_phone_number,scheduled_for,notes,subtotal_cents,item_count,deposit_required_cents,status,revision,created_at,updated_at,fulfillment_type,discount_cents,booking_managed)
-          VALUES($1,$2,$3,$4,$5,$6,$7,$8,$9,'CONFIRMED',0,now(),now(),'PICKUP',0,true) ON CONFLICT(order_number) DO NOTHING RETURNING id`,
-          [input.id,this.number(),input.clientId,input.contactPhoneNumber,input.scheduledFor,input.notes,subtotal,input.items.length,input.depositRequiredCents]);
+        const result=await db.query(`INSERT INTO customer_order (id,order_number,client_id,contact_phone_number,scheduled_for,notes,subtotal_cents,item_count,deposit_required_cents,status,revision,created_at,updated_at,fulfillment_type,discount_cents,booking_managed,roast_block_needed_reason,price_override_cents,final_total_cents)
+          VALUES($1,$2,$3,$4,$5,$6,$7,$8,$9,'CONFIRMED',0,now(),now(),'PICKUP',0,true,$10,$11,$11) ON CONFLICT(order_number) DO NOTHING RETURNING id`,
+          [input.id,this.number(),input.clientId,input.contactPhoneNumber,input.scheduledFor,input.notes,subtotal,input.items.length,input.depositRequiredCents,roastBlockNeededReason,input.priceOverrideCents??null]);
         if(result.rowCount){inserted=true;break;}
       }
       if(!inserted)throw new HttpsError('aborted','Could not allocate an order number; retry');
@@ -74,10 +100,7 @@ export class OrderCreationService {
         await db.query(`INSERT INTO order_item(id,order_id,product_id,product_name,catalog_unit_price_cents,unit_price_cents,quantity,capacity_group_id,capacity_group_name_snapshot,created_at)
           VALUES($1,$2,$3,$4,$5,$5,$6,$7,$8,now())`,[item.id,input.id,p.id,p.name,p.price_cents,item.quantity,p.capacity_group_id,groups.find(g=>g.id===p.capacity_group_id)?.name??null]);
       }
-      for(const a of input.allocations) await db.query('INSERT INTO order_capacity_allocation(id,order_id,pickup_day,group_id,block_minute,quantity) VALUES($1,$2,$3,$4,$5,$6)',[randomUUID(),input.id,pickup.day,a.groupId,a.blockMinute,a.quantity]);
       await db.query('INSERT INTO order_creation_request(id,actor_uid,payload_hash) VALUES($1,$2,$3)',[input.id,actor.uid,hash]);
-      await db.query(`INSERT INTO order_audit_event(id,order_id,action,actor_uid,occurred_at,order_revision,changes)
-        VALUES($1,$2,'ORDER_CREATED',$3,now(),0,$4::jsonb)`,[randomUUID(),input.id,actor.uid,JSON.stringify({before:null,after:{...input,subtotalCents:subtotal,status:'CONFIRMED'}})]);
       if ((input.depositReceivedCents??0)>0) {
         // The parent is new and exclusively owned by this transaction. Keep the same
         // revision-before-ledger invariant as updateStaffOrder.
@@ -88,12 +111,26 @@ export class OrderCreationService {
         const saved=receipt.rows[0];
         await db.query(`INSERT INTO order_audit_event(id,order_id,action,actor_uid,occurred_at,order_revision,changes)
           VALUES($1,$2,'PAYMENT_RECEIVED',$3,now(),1,$4::jsonb)`,[randomUUID(),input.id,actor.uid,
-          JSON.stringify({before:{status:'CONFIRMED',finalTotalCents:null,completedAt:null},
-            after:{status:'CONFIRMED',finalTotalCents:null,completedAt:null,
+          JSON.stringify({before:{status:'CONFIRMED',finalTotalCents:input.priceOverrideCents??null,completedAt:null},
+            after:{status:'CONFIRMED',finalTotalCents:input.priceOverrideCents??null,completedAt:null,
               payment:{id:saved.id,amountCents:saved.amount_cents,receivedAt:saved.received_at.toISOString()}}})]);
       }
-      // Time can advance while waiting for a lock; validate again before commit.
-      validateTiming(input,this.now());
+      while (true) {
+        const automaticPlacement=input.autoAssignRoastBlock&&allocations.length>0;
+        if(automaticPlacement) await db.query('SAVEPOINT automatic_placement');
+        for(const a of allocations) await db.query('INSERT INTO order_capacity_allocation(id,order_id,pickup_day,group_id,block_minute,quantity) VALUES($1,$2,$3,$4,$5,$6)',[randomUUID(),input.id,pickup.day,a.groupId,a.blockMinute,a.quantity]);
+        await db.query(`INSERT INTO order_audit_event(id,order_id,action,actor_uid,occurred_at,order_revision,changes)
+          VALUES($1,$2,'ORDER_CREATED',$3,now(),0,$4::jsonb)`,[randomUUID(),input.id,actor.uid,JSON.stringify({before:null,after:{...input,allocations,roastBlockNeededReason,subtotalCents:subtotal,status:'CONFIRMED'}})]);
+        const now=this.now();
+        validateTiming(input,now);
+        if(!automaticPlacement||!blockHasStarted(pickup.day,allocations[0].blockMinute,now)) break;
+
+        // Discard only the tentative placement and audit. Keep the order and its receipt.
+        await db.query('ROLLBACK TO SAVEPOINT automatic_placement');
+        allocations=[];
+        roastBlockNeededReason='BLOCK_STARTED';
+        await db.query('UPDATE customer_order SET roast_block_needed_reason=$2 WHERE id=$1',[input.id,roastBlockNeededReason]);
+      }
       await db.query('COMMIT');return {id:input.id};
     } catch(error) {await db.query('ROLLBACK').catch(()=>{});throw error;} finally {db.release();}
   }

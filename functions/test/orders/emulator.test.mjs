@@ -29,7 +29,7 @@ before(async()=>{
   const token=`${encode({alg:'none'})}.${encode({sub:actor.uid,aud:'demo-mtl',iss:'https://securetoken.google.com/demo-mtl',staff:true,firebase:{sign_in_provider:'google.com'},iat:Math.floor(Date.now()/1000),exp:Math.floor(Date.now()/1000)+3600})}.`;
   const r=await fetch('http://127.0.0.1:9399/v1/projects/demo-mtl/locations/northamerica-northeast1/services/restaurant/connectors/staff-admin:executeQuery',{method:'POST',headers:{'Content-Type':'application/json','x-firebase-auth-token':token},body:JSON.stringify({operationName:'ListOrders',variables:{}})});
   const result=await r.json();assert.equal(!result.errors?.length,true,JSON.stringify(result));
-  for(const migration of ['order-integrity.sql','order-paid-status.sql','order-capacity-booking.sql','order-actions.sql','payment-edits.sql','order-edits.sql','special-day-capacity.sql','mark-paid-with-balance.sql','historical-order-import.sql'])await pool.query(await readFile(new URL(`../../../migrations/${migration}`,import.meta.url),'utf8'));
+  for(const migration of ['order-integrity.sql','order-paid-status.sql','order-capacity-booking.sql','order-actions.sql','payment-edits.sql','order-edits.sql','special-day-capacity.sql','mark-paid-with-balance.sql','historical-order-import.sql','automatic-roast-booking.sql'])await pool.query(await readFile(new URL(`../../../migrations/${migration}`,import.meta.url),'utf8'));
   await pool.query(await readFile(new URL('../../../migrations/mark-paid-with-balance.sql',import.meta.url),'utf8')); // Repeatable upgrade.
   assert.equal((await pool.query(await readFile(new URL('../../../migrations/verify-mark-paid-with-balance.sql',import.meta.url),'utf8'))).rows[0].ok,true);
   assert.equal((await pool.query('SELECT count(*)::int n FROM capacity_group')).rows[0].n,0);
@@ -562,6 +562,7 @@ test('database guards reject allocation bypasses and migration preserves explici
   await pool.query(await readFile(new URL('../../../migrations/order-edits.sql',import.meta.url),'utf8'));
   await pool.query(await readFile(new URL('../../../migrations/order-edits.sql',import.meta.url),'utf8'));
   await pool.query(await readFile(new URL('../../../migrations/special-day-capacity.sql',import.meta.url),'utf8'));
+  await pool.query(await readFile(new URL('../../../migrations/automatic-roast-booking.sql',import.meta.url),'utf8'));
   assert.deepEqual(await settings(),before);assert.deepEqual((await pool.query('SELECT * FROM capacity_group WHERE id=$1',[belly])).rows[0],group);
 });
 
@@ -788,6 +789,7 @@ test('edit migration removes inherited SQL Connect private context and routine g
       TO firebasereader_restaurant_public,firebasewriter_restaurant_public`);
   await pool.query(await readFile(new URL('../../../migrations/order-edits.sql',import.meta.url),'utf8'));
   await pool.query(await readFile(new URL('../../../migrations/special-day-capacity.sql',import.meta.url),'utf8'));
+  await pool.query(await readFile(new URL('../../../migrations/automatic-roast-booking.sql',import.meta.url),'utf8'));
   for(const role of ['firebasereader_restaurant_public','firebasewriter_restaurant_public']) {
     const result=(await pool.query(`SELECT
       has_table_privilege($1,'native_order_edit_context','SELECT,INSERT,UPDATE,DELETE,TRUNCATE,REFERENCES,TRIGGER') context,
@@ -1078,4 +1080,109 @@ test('historical import rejects stale or missing products and rolls back failure
     await pool.query('DROP TRIGGER reject_test_historical_request ON order_creation_request; DROP FUNCTION public.reject_test_historical_request()');
   }
   assert.deepEqual(await importer.importOrder(historicalAdmin, v), {id: v.id});
+});
+
+test('automatic booking, assignment and admin override are atomic and preserve the pickup', async () => {
+  const mainGroup=randomUUID(), sideGroup=randomUUID(), mainProduct=randomUUID(), sideProduct=randomUUID();
+  await configuration.change(admin,{action:'CREATE_GROUP',id:mainGroup,code:'AUTO_MAIN',name:'Auto main',capacityPerBlock:2});
+  await configuration.change(admin,{action:'CREATE_GROUP',id:sideGroup,code:'AUTO_SIDE',name:'Auto side',capacityPerBlock:5});
+  await pool.query(`INSERT INTO product(id,name,price_cents,is_active,capacity_group_id,revision,created_at)
+    VALUES($1,'Auto main',100,true,$2,0,now()),($3,'Auto side',50,true,$4,0,now())`,
+    [mainProduct,mainGroup,sideProduct,sideGroup]);
+  const earlyPickup='2035-06-01T14:00:00.000Z';
+  const request=(scheduledFor=earlyPickup)=>({
+    id:randomUUID(),items:[
+      {id:randomUUID(),productId:mainProduct,expectedRevision:0,quantity:2},
+      {id:randomUUID(),productId:sideProduct,expectedRevision:0,quantity:1},
+    ],clientId:null,contactPhoneNumber:null,scheduledFor,depositRequiredCents:0,notes:null,autoAssignRoastBlock:true
+  });
+  const withHyphens = id => id.replace(/^([a-f0-9]{8})([a-f0-9]{4})([a-f0-9]{4})([a-f0-9]{4})([a-f0-9]{12})$/i, "$1-$2-$3-$4-$5");
+  const read=async id=>(await query('GetOrder',{id})).order;
+  const places=async id=>(await query('ListOrderCapacityAllocations',{id})).orderCapacityAllocations;
+  const requests=[request(),request()];
+  await Promise.all(requests.map(v=>service.create(actor,v)));
+  const rows=await Promise.all(requests.map(v=>read(v.id)));
+  const missing=rows.find(o=>o.roastBlockNeededReason==='BLOCK_FULL');
+  const assigned=rows.find(o=>!o.roastBlockNeededReason);
+  assert.ok(missing && assigned);
+  assert.equal(Date.parse(assigned.scheduledFor),Date.parse(earlyPickup));
+  assert.equal(Date.parse(missing.scheduledFor),Date.parse(earlyPickup));
+  assert.deepEqual((await places(assigned.id)).map(p=>p.blockMinute),[660,660]);
+  assert.deepEqual(await places(missing.id),[]);
+  const listed=(await query('ListStaffOrderSummaries')).staffOrderSummaries;
+  assert.equal(listed.find(order=>order.orderNumber===missing.orderNumber).roastBlockNeededReason,'BLOCK_FULL');
+
+  const actions=new OrderActionService(pool);
+  const unassignedEdit={action:'EDIT',id:withHyphens(missing.id),requestId:randomUUID(),expectedRevision:missing.revision,
+    clientId:null,contactPhoneNumber:null,scheduledFor:earlyPickup,notes:'kept pickup and demand',
+    expectedSettingsRevision:(await pool.query("SELECT revision FROM booking_settings WHERE id='default'")).rows[0].revision,
+    expectedGroups:[mainGroup,sideGroup].map(id=>({id,expectedRevision:0})),allocations:[],
+    items:(await query('ListOrderItems',{id:withHyphens(missing.id)})).orderItems.map(i=>({id:withHyphens(i.id),productId:withHyphens(i.productId),quantity:i.quantity}))};
+  const reduced={...unassignedEdit,id:withHyphens(assigned.id),requestId:randomUUID(),expectedRevision:assigned.revision,
+    allocations:[mainGroup,sideGroup].map(groupId=>({groupId,blockMinute:660,quantity:1})),
+    items:(await query('ListOrderItems',{id:assigned.id})).orderItems.map(i=>({id:withHyphens(i.id),productId:withHyphens(i.productId),quantity:1}))};
+  await actions.perform(actor,reduced);
+  assert.equal(Date.parse((await read(assigned.id)).scheduledFor),Date.parse(earlyPickup));
+  assert.deepEqual((await places(assigned.id)).map(p=>p.quantity),[1,1]);
+
+  await actions.perform(actor,unassignedEdit);
+  const edited=await read(missing.id);
+  assert.equal(edited.roastBlockNeededReason,'BLOCK_FULL');
+  assert.deepEqual(await places(missing.id),[]);
+
+  const assignment={action:'ASSIGN_ROAST_BLOCK',id:withHyphens(missing.id),requestId:randomUUID(),expectedRevision:edited.revision,
+    allocations:[
+      {groupId:mainGroup,blockMinute:780,quantity:1},{groupId:mainGroup,blockMinute:930,quantity:1},
+      {groupId:sideGroup,blockMinute:930,quantity:1}
+    ]};
+  await assert.rejects(actions.perform(actor,{...assignment,expectedRevision:missing.revision}),/ORDER_CONFLICT/);
+  await assert.rejects(actions.perform(actor,{...assignment,allocations:[{groupId:mainGroup,blockMinute:660,quantity:2}]}),/GROUP_CAPACITY/);
+  await assert.rejects(actions.perform(actor,{...assignment,allocations:assignment.allocations.slice(0,2)}),/ORDER_ASSIGNMENT_INVALID/);
+  await Promise.all([actions.perform(actor,assignment),actions.perform(actor,assignment)]);
+  const final=await read(missing.id);
+  assert.equal(final.roastBlockNeededReason??null,null);
+  assert.equal(final.status,'CONFIRMED');
+  assert.equal(Date.parse(final.scheduledFor),Date.parse(earlyPickup));
+  assert.equal((await places(missing.id)).length,3);
+  assert.equal((await query('ListOrderAuditEvents',{id:withHyphens(missing.id)})).orderAuditEvents.filter(e=>e.action==='ROAST_BLOCK_ASSIGNED').length,1);
+
+  const priced={...request('2035-06-02T18:00:00.000Z'),priceOverrideCents:125,depositReceivedCents:100};
+  await assert.rejects(service.create(actor,priced),/ORDER_PRICE_OVERRIDE_ADMIN/);
+  await assert.rejects(service.create(admin,{...priced,depositReceivedCents:126}),{code:'invalid-argument'});
+  await service.create(admin,priced);
+  const saved=await read(priced.id);
+  assert.equal(saved.priceOverrideCents,125);
+  assert.equal(saved.finalTotalCents,125);
+  assert.equal(saved.subtotalCents,250);
+  assert.equal(Number((await query('GetOrder',{id:priced.id})).financials[0].balanceCents),25);
+  assert.deepEqual((await places(priced.id)).map(p=>p.blockMinute),[780,780]);
+  const pricedEdit={...unassignedEdit,id:priced.id,requestId:randomUUID(),expectedRevision:saved.revision,
+    scheduledFor:priced.scheduledFor,
+    allocations:[{groupId:mainGroup,blockMinute:780,quantity:1},{groupId:sideGroup,blockMinute:780,quantity:1}],
+    items:(await query('ListOrderItems',{id:priced.id})).orderItems.map(i=>({id:withHyphens(i.id),productId:withHyphens(i.productId),quantity:1}))};
+  await actions.perform(actor,pricedEdit);
+  assert.equal((await read(priced.id)).finalTotalCents,125);
+  assert.equal((await read(priced.id)).subtotalCents,150);
+  await actions.perform(actor,{action:'PAID',id:priced.id,requestId:randomUUID(),expectedRevision:saved.revision+1});
+  assert.equal((await read(priced.id)).finalTotalCents,125);
+
+  const started=request('2035-06-03T16:30:00.000Z');
+  await new OrderCreationService(pool,()=>new Date('2035-06-03T15:15:00Z')).create(actor,started);
+  assert.equal((await read(started.id)).roastBlockNeededReason,'BLOCK_STARTED');
+  assert.deepEqual(await places(started.id),[]);
+
+  const crossesStart={...request('2035-06-04T16:00:00.000Z'),depositReceivedCents:100};
+  const cutoff='2035-06-04T15:00:00.000Z';
+  let clockReads=0;
+  const crossingService=new OrderCreationService(pool,()=>new Date(++clockReads<5?'2035-06-04T14:59:59.999Z':cutoff));
+  assert.deepEqual(await crossingService.create(actor,crossesStart),{id:crossesStart.id});
+  assert.deepEqual(await crossingService.create(actor,crossesStart),{id:crossesStart.id});
+  const late=await read(crossesStart.id);
+  assert.equal(late.roastBlockNeededReason,'BLOCK_STARTED');
+  assert.deepEqual(await places(late.id),[]);
+  const events=(await query('ListOrderAuditEvents',{id:late.id})).orderAuditEvents;
+  assert.deepEqual(events.map(e=>e.action),['ORDER_CREATED','PAYMENT_RECEIVED']);
+  assert.equal(events[0].changes.after.roastBlockNeededReason,'BLOCK_STARTED');
+  assert.deepEqual(events[0].changes.after.allocations,[]);
+  assert.equal((await query('ListOrderPayments',{id:late.id})).payments.length,1);
 });

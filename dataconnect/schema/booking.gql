@@ -46,7 +46,7 @@ type OrderCreationRequest @table {
 }
 type StaffOrderSummary @view(sql: """
   SELECT o.id,o.order_number,o.status,o.scheduled_for,o.contact_phone_number,o.client_id,o.created_at,
-    f.balance_cents,f.net_paid_cents,f.is_estimate,
+    f.balance_cents,f.net_paid_cents,f.is_estimate,o.roast_block_needed_reason,
     COALESCE(i.description,'') AS description,COALESCE(g.quantities,'[]'::jsonb) AS group_quantities
   FROM customer_order o
   LEFT JOIN (SELECT order_id,
@@ -78,6 +78,7 @@ type StaffOrderSummary @view(sql: """
   isEstimate: Boolean
   description: String
   groupQuantities: Any
+  roastBlockNeededReason: String
 }
 
 # Private retry identities; no connector read/write operation exposes these.

@@ -88,6 +88,40 @@
       "file": "migrations/historical-order-import.sql",
       "mode": "transaction",
       "verify": "migrations/verify-historical-order-import.sql"
+    },
+    {
+      "id": "014-order-slip-schema",
+      "file": "migrations/deploy-order-slip-schema.mjs",
+      "mode": "maintenance",
+      "idempotent": true,
+      "procedure": "docs/order-slip-tasks.md",
+      "verify": "migrations/verify-order-slip-schema.sql"
+    },
+    {
+      "id": "015-order-slip-tasks",
+      "file": "migrations/order-slip-tasks.sql",
+      "mode": "transaction",
+      "verify": "migrations/verify-order-slip-tasks.sql"
+    },
+    {
+      "id": "016-order-slip-deepseek-provider",
+      "file": "migrations/order-slip-deepseek-provider.sql",
+      "mode": "transaction",
+      "verify": "migrations/verify-order-slip-deepseek-provider.sql"
+    },
+    {
+      "id": "017-automatic-roast-schema",
+      "file": "migrations/deploy-automatic-roast-schema.mjs",
+      "mode": "maintenance",
+      "idempotent": true,
+      "procedure": "docs/live-order-booking.md",
+      "verify": "migrations/verify-automatic-roast-schema.sql"
+    },
+    {
+      "id": "018-automatic-roast-booking",
+      "file": "migrations/automatic-roast-booking.sql",
+      "mode": "transaction",
+      "verify": "migrations/verify-automatic-roast-booking.sql"
     }
   ],
   "checks": [
@@ -98,5 +132,5 @@
     "emulators"
   ],
   "databaseContract": "release/database-contract.json",
-  "schemaMaintenance": "011-report-schema"
+  "schemaMaintenance": "017-automatic-roast-schema"
 }

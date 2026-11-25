@@ -1,0 +1,22 @@
+# Private task state, accessed only by the Admin slip callables and worker.
+type OrderSlipTask @table @index(fields: ["createdAt", "id"]) @index(fields: ["status", "availableAt"]) @index(fields: ["expiresAt"]) {
+  id: UUID!
+  actorUid: String!
+  checksum: String!
+  objectKey: String!
+  objectGeneration: String!
+  provider: String!
+  model: String!
+  status: String!
+  preview: Any
+  failureCode: String
+  createdAt: Timestamp!
+  updatedAt: Timestamp!
+  expiresAt: Timestamp!
+  availableAt: Timestamp!
+  dispatchGeneration: Int!
+  dispatchedAt: Timestamp
+  attempts: Int!
+  leaseToken: UUID
+  leaseUntil: Timestamp
+}

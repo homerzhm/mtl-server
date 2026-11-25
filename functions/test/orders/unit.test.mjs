@@ -130,3 +130,20 @@ test('historical payload canonicalizes identity and times and rejects invalid mo
     assert.throws(() => parseHistoricalOrder({...v, ...patch}), {code: 'invalid-argument'});
   }
 });
+
+test('automatic roast matching keeps early pickup and uses only the corresponding block', async () => {
+  const {matchingBlock, blockHasStarted}=await import('../../lib/orders/booking.js');
+  const blockMinutes=[660,780,930,1080];
+  for (const [pickup, expected] of [[600,660],[645,660],[660,660],[779,660],[840,780],[1439,1080]])
+    assert.equal(matchingBlock(blockMinutes,pickup),expected);
+  assert.equal(matchingBlock([],600),undefined);
+  assert.equal(blockHasStarted('2030-06-01',660,new Date('2030-06-01T15:00:00Z')),true);
+  assert.equal(blockHasStarted('2030-06-01',660,new Date('2030-06-01T14:59:00Z')),false);
+  const {allocations, expectedSettingsRevision, expectedGroups, ...base}=input();
+  const automatic={...base,autoAssignRoastBlock:true,priceOverrideCents:0,scheduledFor:'2030-06-01T14:00:00Z'};
+  assert.equal(validateInput(automatic).priceOverrideCents,0);
+  assert.equal(validateTiming(validateInput(automatic),new Date('2030-06-01T13:00:00Z')).minute,600);
+  assert.throws(()=>validateTiming(validateInput({...automatic,scheduledFor:'2030-06-01T13:45:00Z'}),new Date('2030-06-01T13:00:00Z')),{code:'failed-precondition'});
+  for (const patch of [{allocations},{expectedSettingsRevision},{expectedGroups},{priceOverrideCents:-1},{priceOverrideCents:2147483648}])
+    assert.throws(()=>validateInput({...automatic,...patch}),{code:'invalid-argument'});
+});

@@ -9,6 +9,8 @@ import {verifyPermissions} from '../../scripts/release/permissions.mjs';
 import {componentStage} from '../../scripts/release/cli.mjs';
 import {up as deploySpecialDaySchema} from '../../migrations/deploy-special-day-schema.mjs';
 import {up as deployReportSchema} from '../../migrations/deploy-report-schema.mjs';
+import {up as deployAutomaticRoastSchema} from '../../migrations/deploy-automatic-roast-schema.mjs';
+import {up as deploySlipSchema} from '../../migrations/deploy-order-slip-schema.mjs';
 let client,manifest;
 before(async()=>{
   client=await fixture();manifest=await loadManifest();
@@ -27,6 +29,47 @@ test('fresh migration setup has no business seeds and only required schedule',as
   assert.equal((await client.query(await readFile(join(root,'migrations/verify-historical-order-import.sql'),'utf8'))).rows[0].ok,true);
   await verifyContract(client,manifest);await verifyPermissions(client,parameters);await assertPrivateLedger(client,parameters);
 });
+test('slip maintenance prepares a private table and restores grants on interrupted registration',async()=>{
+  await client.query('DROP TABLE public.order_slip_task');
+  let registrations=0;
+  const firebase=async(command,args)=>{
+    assert.equal(command,'deploy');
+    assert.deepEqual(args,['--only','dataconnect:restaurant:schema','--non-interactive']);
+    registrations++;
+    assert.equal((await client.query(await readFile(join(root,'migrations/verify-order-slip-schema.sql'),'utf8'))).rows[0].ok,true);
+    assert.deepEqual((await client.query(`SELECT
+      has_table_privilege('firebasereader_restaurant_public','public.order_slip_task','REFERENCES') AS ddl,
+      has_table_privilege('firebasereader_restaurant_public','public.order_slip_task','SELECT') AS reads`)).rows,
+    [{ddl:true,reads:false}]);
+    await assert.rejects(client.query('DELETE FROM public.report_entry WHERE false'),{code:'55000'});
+    await assert.rejects(client.query('DELETE FROM public.order_slip_task WHERE false'),{code:'55000'});
+    assert.equal((await client.query("SELECT count(*)::int AS n FROM pg_constraint WHERE conname='report_entry_values_check'")).rows[0].n,0);
+    if(registrations===1) throw new Error('Slip registration interrupted');
+  };
+  await assert.rejects(deploySlipSchema(client,{parameters,firebase}),/Slip registration interrupted/);
+  await verifyPermissions(client,parameters);
+  assert.equal((await client.query("SELECT count(*)::int AS n FROM pg_constraint WHERE conname='report_entry_values_check'")).rows[0].n,1);
+  await deploySlipSchema(client,{parameters,firebase});
+  await client.query(await readFile(join(root,'migrations/order-slip-tasks.sql'),'utf8'));
+  await client.query(await readFile(join(root,'migrations/order-slip-deepseek-provider.sql'),'utf8'));
+  assert.equal((await client.query(await readFile(join(root,'migrations/verify-order-slip-deepseek-provider.sql'),'utf8'))).rows[0].ok,true);
+  await verifyContract(client,manifest);
+  await verifyPermissions(client,parameters);
+  await rollback(async()=>{
+    await client.query('GRANT SELECT(price_cents) ON public.product TO release_slips');
+    await assert.rejects(verifyPermissions(client,parameters),/SLIPS unexpected SELECT/);
+  });
+  await rollback(async()=>{
+    await client.query('GRANT SELECT(preview) ON public.order_slip_task TO firebasewriter_release');
+    await assert.rejects(verifyPermissions(client,parameters),/Private order slip/);
+  });
+  await rollback(async()=>{
+    await client.query('SET LOCAL ROLE release_slips');
+    await client.query('SELECT id,name,chinese_name FROM public.product WHERE is_active');
+    await assert.rejects(client.query('SELECT phone_number FROM public.client'),{code:'42501'});
+  });
+});
+
 test('special-day schema maintenance creates SQL before registration and resumes an interrupted release',async()=>{
   const firebase=async (command,args)=>{
     assert.equal(command,'deploy');
@@ -111,6 +154,36 @@ test('Report maintenance prepares both tables, restores native protections and k
     await client.query('GRANT UPDATE(snapshot) ON public.report_entry_change TO release_report');
     await assert.rejects(verifyPermissions(client,parameters),/UPDATE privilege/);
   });
+});
+test('automatic roast schema stages columns and restores Report checks after interrupted registration',async()=>{
+  await client.query(`DROP TRIGGER order_capacity_assignment_change ON public.customer_order;
+    ALTER TABLE public.customer_order DROP CONSTRAINT customer_order_assignment_check,
+      DROP COLUMN roast_block_needed_reason, DROP COLUMN price_override_cents`);
+  const verifyColumns=await readFile(join(root,'migrations/verify-automatic-roast-schema.sql'),'utf8');
+  const reportChecks=await readFile(join(root,'migrations/verify-report-constraints.sql'),'utf8');
+  let registrations=0;
+  const firebase=async(command,args)=>{
+    registrations++;
+    assert.equal(command,'deploy');
+    assert.deepEqual(args,['--only','dataconnect:restaurant:schema','--non-interactive']);
+    assert.equal((await client.query(verifyColumns)).rows[0].ok,true);
+    assert.equal((await client.query(`SELECT has_column_privilege(
+      'release_orders','public.customer_order','roast_block_needed_reason','UPDATE') ok`)).rows[0].ok,true);
+    for(const table of ['customer_order','special_day_rule','report_entry','report_entry_change','order_slip_task']) {
+      await assert.rejects(client.query(`DELETE FROM public.${table} WHERE false`),{code:'55000'});
+    }
+    if(registrations===1) throw new Error('Automatic roast registration interrupted');
+  };
+  await assert.rejects(deployAutomaticRoastSchema(client,{parameters,firebase}),/Automatic roast registration interrupted/);
+  assert.equal((await client.query(reportChecks)).rows[0].ok,true);
+  await deployAutomaticRoastSchema(client,{parameters,firebase});
+  assert.equal(registrations,2);
+  assert.equal((await client.query(reportChecks)).rows[0].ok,true);
+  await client.query(await readFile(join(root,'migrations/automatic-roast-booking.sql'),'utf8'));
+  const verifyBooking=await readFile(join(root,'migrations/verify-automatic-roast-booking.sql'),'utf8');
+  assert.equal((await client.query(verifyBooking)).rows[0].ok,true);
+  await verifyContract(client,manifest);
+  await verifyPermissions(client,parameters);
 });
 test('native protection tampering and inherited private grants are detected',async()=>{
   await rollback(async()=>{

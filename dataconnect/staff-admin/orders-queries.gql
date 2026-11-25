@@ -1,6 +1,6 @@
 
 query GetOrder($id: UUID!) @auth(expr: "auth.uid != '' && auth.token.firebase.sign_in_provider == 'google.com' && ((has(auth.token.staff) && auth.token.staff == true) || (has(auth.token.admin) && auth.token.admin == true))") {
-  order(id: $id) { ...OrderFields }
+  order(id: $id) { ...OrderFields roastBlockNeededReason priceOverrideCents }
   financials: orderFinancialSummaries(where: {orderId: {eq: $id}}) {paidCents refundedCents netPaidCents balanceCents isEstimate}
 }
 query GetOrderByNumber($orderNumber: String!) @auth(expr: "auth.uid != '' && auth.token.firebase.sign_in_provider == 'google.com' && ((has(auth.token.staff) && auth.token.staff == true) || (has(auth.token.admin) && auth.token.admin == true))") {

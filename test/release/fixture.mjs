@@ -18,7 +18,7 @@ export async function fixture() {
   return client;
 }
 export async function grantFixtures(client) {
-  await client.query(`CREATE ROLE release_staff; CREATE ROLE release_orders; CREATE ROLE release_report;
+  await client.query(`CREATE ROLE release_staff; CREATE ROLE release_orders; CREATE ROLE release_report; CREATE ROLE release_slips;
     CREATE ROLE firebasereader_release; CREATE ROLE firebasewriter_release;
     CREATE ROLE firebasereader_restaurant_public; CREATE ROLE firebasewriter_restaurant_public;
     REVOKE CREATE ON SCHEMA public FROM PUBLIC`);
@@ -26,8 +26,9 @@ export async function grantFixtures(client) {
     const role=`release_${topic.toLowerCase()}`;
     await client.query(`GRANT CONNECT ON DATABASE restaurant TO ${role}; GRANT USAGE ON SCHEMA public TO ${role}`);
     for(const [privilege,tables] of [['SELECT',policy.select],['INSERT',policy.insert],['DELETE',policy.delete??[]]]) for(const table of tables) await client.query(`GRANT ${privilege} ON public.${table} TO ${role}`);
+    for(const [table,columns] of Object.entries(policy.selectColumns??{})) await client.query(`GRANT SELECT(${columns.join(',')}) ON public.${table} TO ${role}`);
     for(const [table,columns] of Object.entries(policy.update)) await client.query(`GRANT UPDATE${columns==='*'?'':`(${columns.join(',')})`} ON public.${table} TO ${role}`);
     for(const name of policy.execute) await client.query(`GRANT EXECUTE ON FUNCTION public.${name} TO ${role}`);
   }
 }
-export const parameters={STAFF_SQL_USER:'release_staff',ORDERS_SQL_USER:'release_orders',REPORT_SQL_USER:'release_report'};
+export const parameters={STAFF_SQL_USER:'release_staff',ORDERS_SQL_USER:'release_orders',REPORT_SQL_USER:'release_report',SLIPS_SQL_USER:'release_slips'};

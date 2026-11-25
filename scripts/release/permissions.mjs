@@ -11,8 +11,16 @@ export const policies = {
     select:['product','client','customer_order','order_item','order_capacity_allocation','order_creation_request','order_action_request','payment','refund','booking_settings','capacity_group','special_day_rule'],
     insert:['customer_order','order_item','order_capacity_allocation','order_creation_request','order_action_request','payment','refund','order_audit_event','capacity_group','special_day_rule'],
     delete:['special_day_rule'],
-    update:{special_day_rule:['capacity_per_block','day_keys','revision','saved_revision','updated_at','updated_by'],customer_order:['revision','status','final_total_cents','completed_at','updated_at','cancelled_at','cancellation_total_cents'],payment:['amount_cents','status'],booking_settings:['block_minutes','revision','updated_at','updated_by'],capacity_group:['name','capacity_per_block','archived','revision','updated_at','updated_by']},
+    update:{special_day_rule:['capacity_per_block','day_keys','revision','saved_revision','updated_at','updated_by'],customer_order:['revision','status','final_total_cents','completed_at','updated_at','cancelled_at','cancellation_total_cents','roast_block_needed_reason'],payment:['amount_cents','status'],booking_settings:['block_minutes','revision','updated_at','updated_by'],capacity_group:['name','capacity_per_block','archived','revision','updated_at','updated_by']},
     execute:['lock_order_creation_sources(uuid[],uuid)','apply_native_order_edit(uuid,integer,jsonb,jsonb,jsonb)'],
+  },
+  SLIPS: {
+    select:['order_slip_task'],
+    selectColumns:{product:['id','name','chinese_name','is_active']},
+    insert:['order_slip_task'],
+    delete:['order_slip_task'],
+    update:{order_slip_task:['status','preview','failure_code','updated_at','available_at','dispatch_generation','dispatched_at','attempts','lease_token','lease_until']},
+    execute:[],
   },
   REPORT: {
     select:['report_entry','report_entry_change'],
@@ -36,8 +44,17 @@ export async function verifyPermissions(client,parameters) {
         const wanted=(privilege==='SELECT'?policy.select:privilege==='INSERT'?policy.insert:privilege==='DELETE'?(policy.delete??[]):[]).includes(table);
         if(actual!==wanted) throw new Error(`${topic} unexpected ${privilege} privilege on ${table}`);
       }
+      if(table==='order_slip_task'&&topic!=='SLIPS') {
+        const exposed=(await client.query("SELECT has_any_column_privilege($1,$2,'SELECT,INSERT,UPDATE,REFERENCES') ok",[user,tableName])).rows[0].ok;
+        if(exposed) throw new Error(`Private order slip data exposed to ${topic}`);
+      }
       const columns=(await client.query("SELECT column_name FROM information_schema.columns WHERE table_schema='public' AND table_name=$1",[table])).rows;
       for(const {column_name:column} of columns) {
+        if(topic==='SLIPS') {
+          const wanted=policy.select.includes(table)||Boolean(policy.selectColumns[table]?.includes(column));
+          const actual=(await client.query("SELECT has_column_privilege($1,$2,$3,'SELECT') ok",[user,tableName,column])).rows[0].ok;
+          if(actual!==wanted) throw new Error(`SLIPS unexpected SELECT privilege on ${table}.${column}`);
+        }
         const allowed=policy.update[table];
         const wanted=allowed==='*'||Boolean(allowed?.includes(column));
         const actual=(await client.query("SELECT has_column_privilege($1,$2,$3,'UPDATE') ok",[user,tableName,column])).rows[0].ok;
@@ -49,6 +66,12 @@ export async function verifyPermissions(client,parameters) {
       if(actual!==policy.execute.includes(routine)) throw new Error(`${topic} unexpected EXECUTE on ${routine}`);
     }
   }
+  const protectedTask=(await client.query(`SELECT EXISTS (
+    SELECT 1 FROM pg_roles WHERE (rolname LIKE 'firebasereader_%' OR rolname LIKE 'firebasewriter_%')
+      AND (has_table_privilege(rolname,'public.order_slip_task','SELECT,INSERT,UPDATE,DELETE,TRUNCATE,REFERENCES,TRIGGER')
+      OR has_any_column_privilege(rolname,'public.order_slip_task','SELECT,INSERT,UPDATE,REFERENCES'))
+    ) exposed`)).rows[0];
+  if(protectedTask.exposed) throw new Error('Private order slip data exposed to connector roles');
   const connectorRoles=(await client.query("SELECT rolname FROM pg_roles WHERE rolname LIKE 'firebasereader_%' OR rolname LIKE 'firebasewriter_%'")).rows;
   if(connectorRoles.length<2) throw new Error('SQL Connect reader/writer roles not found');
   for(const {rolname:user} of connectorRoles) {
