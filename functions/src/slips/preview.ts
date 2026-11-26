@@ -36,10 +36,12 @@ const suggested = (value: JsonSchema) => schemaObject({
   sourceLineIds: array(string),
 });
 const numeric = suggested(integer);
+const sourceLines = array(schemaObject({id: string, text: string}));
 export const transcriptSchema = schemaObject({
-  sources: array(schemaObject({id: string, text: string})),
+  sources: sourceLines,
 });
 export const reviewSchema = schemaObject({
+  sourceCorrections: sourceLines,
   prefill: schemaObject({
     items: array(schemaObject({productId: suggested(string), quantity: numeric})),
     pickup: schemaObject({

@@ -13,10 +13,11 @@ export function vertexProvider(project: string, model: string, request: Provider
   const {location, requestType} = serving;
   const host = location === 'us' ? 'aiplatform.us.rep.googleapis.com' : `${location}-aiplatform.googleapis.com`;
   const url = `https://${host}/v1/projects/${project}/locations/${location}/publishers/google/models/${model}:generateContent`;
-  async function generate(instruction: string, part: unknown, schema: object, signal: AbortSignal) {
+  const image = (photo: Buffer) => ({inlineData: {mimeType: 'image/jpeg', data: photo.toString('base64')}});
+  async function generate(instruction: string, parts: unknown[], schema: object, signal: AbortSignal) {
     const response = await request(url, {
       systemInstruction: {parts: [{text: instruction}]},
-      contents: [{role: 'user', parts: [part]}],
+      contents: [{role: 'user', parts}],
       generationConfig: {
         maxOutputTokens: 12288,
         responseMimeType: 'application/json',
@@ -30,10 +31,9 @@ export function vertexProvider(project: string, model: string, request: Provider
     return parse(candidate.content.parts.filter(part => !part.thought).map(part => part.text ?? '').join(''));
   }
   return {
-    transcribe: (photo, signal) => generate(transcriptionInstruction,
-      {inlineData: {mimeType: 'image/jpeg', data: photo.toString('base64')}}, transcriptSchema, signal),
-    review: (sources, catalog, signal) => generate(reviewInstruction,
-      {text: JSON.stringify({sources, catalog})}, reviewSchema, signal),
+    transcribe: (photo, signal) => generate(transcriptionInstruction, [image(photo)], transcriptSchema, signal),
+    review: (photo, sources, catalog, signal) => generate(reviewInstruction,
+      [{text: JSON.stringify({sources, catalog})}, image(photo)], reviewSchema, signal),
   };
 }
 
@@ -42,6 +42,9 @@ type ResponsesProvider = Exclude<ModelSelection['provider'], 'vertex'>;
 export function responsesProvider(provider: ResponsesProvider, model: string, request: ProviderRequest): SlipModelProvider {
   const deepSeek = provider === 'deepseek';
   const url = deepSeek ? 'https://api.deepseek.com/responses' : 'https://api.openai.com/v1/responses';
+  const image = (photo: Buffer) => ({
+    type: 'input_image', image_url: `data:image/jpeg;base64,${photo.toString('base64')}`, detail: 'high',
+  });
   async function generate(instructions: string, content: unknown, name: string, schema: object, signal: AbortSignal) {
     const response = await request(url, {
       model, input: [{role: 'user', content}], instructions, max_output_tokens: 12288,
@@ -55,11 +58,11 @@ export function responsesProvider(provider: ResponsesProvider, model: string, re
     return parse(contents.filter(part => part.type === 'output_text').map(part => part.text).join(''));
   }
   return {
-    transcribe: (photo, signal) => generate(transcriptionInstruction,
-      [{type: 'input_image', image_url: `data:image/jpeg;base64,${photo.toString('base64')}`, detail: 'high'}],
+    transcribe: (photo, signal) => generate(transcriptionInstruction, [image(photo)],
       'order_slip_transcript', transcriptSchema, signal),
-    review: (sources, catalog, signal) => generate(reviewInstruction,
-      JSON.stringify({sources, catalog}), 'order_slip_review', reviewSchema, signal),
+    review: (photo, sources, catalog, signal) => generate(reviewInstruction,
+      [{type: 'input_text', text: JSON.stringify({sources, catalog})}, image(photo)],
+      'order_slip_review', reviewSchema, signal),
   };
 }
 

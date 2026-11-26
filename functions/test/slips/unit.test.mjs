@@ -74,6 +74,16 @@ test('reviews only a validated transcript and validates product IDs and citation
   await assert.rejects(interpret(invalidTranscript, Buffer.alloc(0),
     async () => assert.fail('Catalog loaded for an invalid transcript'), deadline()), /Invalid slip preview/);
   await assert.rejects(interpret(provider(), Buffer.alloc(0), async () => [], deadline()), /Invalid slip preview/);
+  const fixture = provider(raw);
+  for (const sourceCorrections of [
+    [{id: 'invented', text: '2 × Roast Pork 12 lb'}],
+    [raw.sources[0], raw.sources[0]],
+  ]) {
+    await assert.rejects(interpret({
+      ...fixture,
+      async review() { return {...await fixture.review(), sourceCorrections}; },
+    }, Buffer.alloc(0), loadCatalog, deadline()), /Invalid slip preview/);
+  }
   raw.prefill.items[0].productId.sourceLineIds = ['invented'];
   await assert.rejects(interpret(provider(raw), Buffer.alloc(0), loadCatalog, deadline()), /Invalid slip preview/);
 });
@@ -89,12 +99,21 @@ for (const {name, serving, host, provider, modelName} of [
     const events = [];
     const {sources, prefill, paperAmounts} = preview();
     sources[0].text = '60 LB';
-    prefill.items[0].quantity = {...unknown(), sourceLineIds: [sources[0].id]};
-    const activeCatalog = [{...catalog[0], name: '60lb'}, catalog[1]];
+    sources[1].text = 'Roast Chicken × [unclear]';
+    prefill.items[0].quantity = {value: 1, confidence: 'low', sourceLineIds: [sources[0].id]};
+    const missedCount = {id: 'seventy', text: 'X 7U L13 (uncertain)'};
+    sources.push(missedCount);
+    const sourceCorrections = [{id: missedCount.id, text: '2 × 70 LB (2 circled)'}];
+    const recoveredQuantity = {value: 2, confidence: 'high', sourceLineIds: [missedCount.id]};
+    prefill.items.push({
+      productId: {value: id, confidence: 'high', sourceLineIds: [missedCount.id]},
+      quantity: recoveredQuantity,
+    });
+    const activeCatalog = [{...catalog[0], name: '60lb'}, catalog[1], {id, name: '70LB', chineseName: null}];
     const request = async (url, body, signal, headers) => {
       requests.push({url, body: structuredClone(body), signal, headers});
       events.push(requests.length === 1 ? 'transcribe' : 'review');
-      const text = JSON.stringify(requests.length === 1 ? {sources} : {prefill, paperAmounts});
+      const text = JSON.stringify(requests.length === 1 ? {sources} : {sourceCorrections, prefill, paperAmounts});
       return serving
         ? {candidates: [{finishReason: 'STOP', content: {parts: [{text}]}}]}
         : {status: 'completed', output: [{type: 'message', content: [{type: 'output_text', text}]}]};
@@ -106,10 +125,20 @@ for (const {name, serving, host, provider, modelName} of [
       return activeCatalog;
     }, deadline());
     assert.deepEqual(events, ['transcribe', 'load catalog', 'review']);
-    assert.deepEqual(result.sources, sources);
+    assert.deepEqual(result.sources, [...sources.slice(0, -1), ...sourceCorrections]);
     assert.equal(result.prefill.items[0].productId.value, productId);
-    assert.equal(result.prefill.items[0].quantity.value, null);
+    assert.deepEqual(result.prefill.items[0].quantity, {value: 1, confidence: 'low', sourceLineIds: [sources[0].id]});
+    assert.deepEqual(result.prefill.items[1].quantity, {...unknown(), sourceLineIds: [sources[1].id]});
+    assert.deepEqual(result.prefill.items[2].quantity, recoveredQuantity);
+    assert.equal(result.prefill.items[2].productId.value, id);
     const [transcription, review] = requests.map(({body}) => body);
+    const transcriptionPrompt = serving ? transcription.systemInstruction.parts[0].text : transcription.instructions;
+    const reviewPrompt = serving ? review.systemInstruction.parts[0].text : review.instructions;
+    assert.match(transcriptionPrompt, /Mark an illegible count as \[unclear\]/);
+    assert.match(transcriptionPrompt, /digits overlapping the printed row numbers/);
+    assert.match(reviewPrompt, /Re-read each item on the photo/);
+    assert.match(reviewPrompt, /no written unit count for an item, suggest quantity 1 with low confidence/);
+    assert.match(reviewPrompt, /written count is unclear or conflicting, set quantity to null/);
     for (const {url, body, headers} of requests) {
       assert.equal(body.tools, undefined);
       if (serving) {
@@ -132,10 +161,16 @@ for (const {name, serving, host, provider, modelName} of [
     }
     if (serving) {
       assert.equal(transcription.contents[0].parts[0].inlineData.data, 'cGhvdG8=');
-      assert.deepEqual(review.contents[0].parts, [{text: JSON.stringify({sources, catalog: activeCatalog})}]);
+      assert.deepEqual(review.contents[0].parts, [
+        {text: JSON.stringify({sources, catalog: activeCatalog})},
+        transcription.contents[0].parts[0],
+      ]);
     } else {
       assert.equal(transcription.input[0].content[0].image_url, 'data:image/jpeg;base64,cGhvdG8=');
-      assert.equal(review.input[0].content, JSON.stringify({sources, catalog: activeCatalog}));
+      assert.deepEqual(review.input[0].content, [
+        {type: 'input_text', text: JSON.stringify({sources, catalog: activeCatalog})},
+        transcription.input[0].content[0],
+      ]);
     }
   });
 }

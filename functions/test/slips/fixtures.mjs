@@ -36,6 +36,6 @@ export function preview() {
 export function provider(raw = preview()) {
   return {
     async transcribe() { return {sources: raw.sources}; },
-    async review() { return {prefill: raw.prefill, paperAmounts: raw.paperAmounts}; },
+    async review() { return {sourceCorrections: [], prefill: raw.prefill, paperAmounts: raw.paperAmounts}; },
   };
 }
